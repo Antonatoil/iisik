@@ -1,0 +1,2 @@
+INSERT INTO payments(id,operation_id,booking_id,student_id,teacher_id,lesson_id,amount,currency,status,created_at,settled_at,version) VALUES
+('00000000-0000-4000-8000-000000000901','00000000-0000-4000-8000-000000001001','00000000-0000-4000-8000-000000000801','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000701',60.00,'BYN','COMPLETED',now()-interval '3 days',now()-interval '3 days',1);

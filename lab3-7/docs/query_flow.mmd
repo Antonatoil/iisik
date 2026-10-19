@@ -1,0 +1,18 @@
+sequenceDiagram
+    autonumber
+    actor User as Student
+    participant G as GraphQL Gateway
+    participant M as MockRpcPorts
+    participant T as Catalog Service
+    participant DB as DB-T (PostgreSQL)
+    User->>G: teachers(filter, page)
+    G->>M: ValidateSession(token)
+    Note over M: in-process, no gRPC
+    M-->>G: actor, role
+    G->>M: SearchTeachers(filter, page)
+    M->>T: search_teachers(...)
+    T->>DB: SELECT teachers + metrics
+    DB-->>T: rows
+    T-->>M: TeacherPage
+    M-->>G: TeacherPage
+    G-->>User: GraphQL data (selected fields)

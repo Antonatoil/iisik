@@ -1,0 +1,15 @@
+sequenceDiagram
+    participant G as Gateway
+    participant P as Платежи
+    participant L as Занятия
+    participant K as Kafka
+    participant NX as Уведомления и аналитика
+    G->>P: RegisterPayment
+    P->>P: Сохранить CREATED
+    P->>L: BeginPayment
+    L-->>P: PROCESSING и сумма
+    P->>P: Результат адаптера и outbox
+    P-->>G: Payment
+    P-->>K: PaymentCompleted
+    K-->>L: Установить PAID
+    K-->>NX: Уведомление и поступление

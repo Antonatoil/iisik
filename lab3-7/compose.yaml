@@ -1,0 +1,31 @@
+name: tutor-lab3-v27
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lab_admin
+      POSTGRES_PASSWORD: lab_admin_only_dev
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - tutor_db_data:/var/lib/postgresql/data
+      - ./db/init_all.sql:/docker-entrypoint-initdb.d/00_init_all.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U lab_admin -d tutor_x -tAc 'SELECT count(*) FROM teacher_popularity' 2>/dev/null | grep -q '^2$'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  gateway:
+    build: .
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_PASSWORD: service_demo_only
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  tutor_db_data:

@@ -1,0 +1,48 @@
+# Student: paste into GraphQL Explorer and set Authorization: Bearer demo-student-token
+query Catalogue {
+  teachers(filter: { sort: RATING_DESC }, page: { limit: 10, offset: 0 }) {
+    items { id displayName bio price { amount currency }
+            subjects { name } metrics { average completedCount } }
+    nextOffset
+  }
+  subjects(page: { limit: 10, offset: 0 }) { items { id name } }
+}
+
+query MyBookings {
+  me { id name email role student { learningGoal } }
+  myBookings(page: {limit: 20, offset: 0}) {
+    items { id paymentState price { amount currency }
+            lesson { id topic status slot { startsAt endsAt } } }
+  }
+  myPayments(page: { limit: 10, offset: 0 }) {
+    items { id status money { amount currency } }
+  }
+  notifications(page: {limit: 10, offset: 0}) {
+    items { id text readAt }
+  }
+}
+
+query Slots {
+  availableSlots(
+    teacherId: "00000000-0000-4000-8000-000000000201",
+    from: "2020-01-01T00:00:00Z", to: "2035-01-01T00:00:00Z",
+    page: {limit: 10, offset: 0}
+  ) { items { id teacherId status startsAt endsAt } }
+}
+
+# Teacher: Authorization: Bearer demo-teacher-token
+query TeacherSchedule {
+  mySchedule(from: "2020-01-01T00:00:00Z", to: "2035-01-01T00:00:00Z", page: {limit: 10, offset: 0}) {
+    items { id status startsAt endsAt }
+  }
+}
+
+# Admin: Authorization: Bearer demo-admin-token
+query AdminOverview {
+  users(page: {limit: 20, offset: 0}) { items { id name role } }
+  platformAnalytics(input: {from: "2020-01-01T00:00:00Z", to: "2035-01-01T00:00:00Z", page: {limit: 20, offset: 0}}) {
+    activeUsers lessonsCompleted cancellations successfulPayments failedPayments
+    revenue { amount currency } averageScore goalAchievementRate resultCoverage
+    teachers { teacherId lessonsCompleted revenue { amount currency } currentRating }
+  }
+}

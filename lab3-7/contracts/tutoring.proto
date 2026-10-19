@@ -1,0 +1,708 @@
+syntax = "proto3";
+package tutoring.v1;
+import "google/protobuf/timestamp.proto";
+
+// Identity is propagated in a trusted signed actor-context metadata header.
+// Public requests cannot provide actor_user_id. gRPC is internal only.
+// Monetary decimal values are strings; see validation rules in README.
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_STUDENT = 1;
+  ROLE_TEACHER = 2;
+  ROLE_ADMIN = 3;
+}
+
+enum RegistrationRole {
+  REGISTRATION_ROLE_UNSPECIFIED = 0;
+  REGISTRATION_ROLE_STUDENT = 1;
+  REGISTRATION_ROLE_TEACHER = 2;
+}
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_BLOCKED = 2;
+}
+
+enum TeacherSort {
+  TEACHER_SORT_UNSPECIFIED = 0;
+  TEACHER_SORT_RATING_DESC = 1;
+  TEACHER_SORT_PRICE_ASC = 2;
+  TEACHER_SORT_PRICE_DESC = 3;
+  TEACHER_SORT_POPULARITY_DESC = 4;
+}
+
+enum SlotStatus {
+  SLOT_STATUS_UNSPECIFIED = 0;
+  SLOT_STATUS_AVAILABLE = 1;
+  SLOT_STATUS_BOOKED = 2;
+  SLOT_STATUS_CLOSED = 3;
+  SLOT_STATUS_REMOVED = 4;
+}
+
+enum LessonStatus {
+  LESSON_STATUS_UNSPECIFIED = 0;
+  LESSON_STATUS_PLANNED = 1;
+  LESSON_STATUS_IN_PROGRESS = 2;
+  LESSON_STATUS_COMPLETED = 3;
+  LESSON_STATUS_CANCELLED = 4;
+}
+
+enum BookingStatus {
+  BOOKING_STATUS_UNSPECIFIED = 0;
+  BOOKING_STATUS_ACTIVE = 1;
+  BOOKING_STATUS_COMPLETED = 2;
+  BOOKING_STATUS_CANCELLED = 3;
+}
+
+enum PaymentState {
+  PAYMENT_STATE_UNSPECIFIED = 0;
+  PAYMENT_STATE_UNPAID = 1;
+  PAYMENT_STATE_PROCESSING = 2;
+  PAYMENT_STATE_PAID = 3;
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_CREATED = 1;
+  PAYMENT_STATUS_PROCESSING = 2;
+  PAYMENT_STATUS_COMPLETED = 3;
+  PAYMENT_STATUS_FAILED = 4;
+  PAYMENT_STATUS_REJECTED = 5;
+}
+
+enum GoalOutcome {
+  GOAL_OUTCOME_UNSPECIFIED = 0;
+  GOAL_OUTCOME_ACHIEVED = 1;
+  GOAL_OUTCOME_NOT_ACHIEVED = 2;
+  GOAL_OUTCOME_NOT_ASSESSED = 3;
+}
+
+enum SubjectAction {
+  SUBJECT_ACTION_UNSPECIFIED = 0;
+  SUBJECT_ACTION_CREATE = 1;
+  SUBJECT_ACTION_UPDATE = 2;
+}
+
+message Student {
+  string id = 1;
+  optional string learning_goal = 2;
+}
+
+message User {
+  string id = 1;
+  Role role = 2;
+  string name = 3;
+  string email = 4;
+  UserStatus status = 5;
+  Student student = 6;
+}
+
+message Session {
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  User user = 3;
+}
+
+message Subject {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  bool active = 4;
+}
+
+message Money {
+  string amount = 1;
+  string currency = 2;
+}
+
+message SearchMetrics {
+  optional string average = 1;
+  int64 review_count = 2;
+  int64 completed_count = 3;
+  google.protobuf.Timestamp last_review_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message Rating {
+  string teacher_id = 1;
+  string average = 2;
+  int64 review_count = 3;
+  int64 version = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message Teacher {
+  string id = 1;
+  string display_name = 2;
+  string bio = 3;
+  Money price = 4;
+  repeated Subject subjects = 5;
+  SearchMetrics metrics = 6;
+}
+
+message Slot {
+  string id = 1;
+  string teacher_id = 2;
+  google.protobuf.Timestamp starts_at = 3;
+  google.protobuf.Timestamp ends_at = 4;
+  SlotStatus status = 5;
+  int64 version = 6;
+}
+
+message Lesson {
+  string id = 1;
+  Slot slot = 2;
+  string subject_id = 3;
+  string topic = 4;
+  LessonStatus status = 5;
+  optional string result_text = 6;
+  GoalOutcome goal_outcome = 7;
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp completed_at = 9;
+  int64 version = 10;
+}
+
+message Booking {
+  string id = 1;
+  string student_id = 2;
+  Lesson lesson = 3;
+  BookingStatus status = 4;
+  Money price = 5;
+  PaymentState payment_state = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message Payment {
+  string id = 1;
+  string operation_id = 2;
+  string booking_id = 3;
+  PaymentStatus status = 4;
+  Money money = 5;
+  optional string failure_code = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp settled_at = 8;
+}
+
+message Review {
+  string id = 1;
+  string teacher_id = 2;
+  int32 score = 3;
+  string text = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message Notification {
+  string id = 1;
+  string kind = 2;
+  string text = 3;
+  string object_id = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp read_at = 6;
+}
+
+message AvailabilityResult {
+  repeated Slot slots = 1;
+}
+
+message TeacherPage {
+  repeated Teacher items = 1;
+  optional int32 next_offset = 2;
+}
+
+message SubjectPage {
+  repeated Subject items = 1;
+  optional int32 next_offset = 2;
+}
+
+message UserPage {
+  repeated User items = 1;
+  optional int32 next_offset = 2;
+}
+
+message SlotPage {
+  repeated Slot items = 1;
+  optional int32 next_offset = 2;
+}
+
+message LessonPage {
+  repeated Lesson items = 1;
+  optional int32 next_offset = 2;
+}
+
+message BookingPage {
+  repeated Booking items = 1;
+  optional int32 next_offset = 2;
+}
+
+message PaymentPage {
+  repeated Payment items = 1;
+  optional int32 next_offset = 2;
+}
+
+message ReviewPage {
+  repeated Review items = 1;
+  optional int32 next_offset = 2;
+}
+
+message NotificationPage {
+  repeated Notification items = 1;
+  optional int32 next_offset = 2;
+}
+
+message TeacherStats {
+  string teacher_id = 1;
+  int64 lessons_completed = 2;
+  repeated Money revenue = 3;
+  optional string average_score = 4;
+  optional string current_rating = 5;
+}
+
+message Analytics {
+  google.protobuf.Timestamp from = 1;
+  google.protobuf.Timestamp to = 2;
+  int64 active_users = 3;
+  int64 lessons_completed = 4;
+  int64 cancellations = 5;
+  int64 successful_payments = 6;
+  int64 failed_payments = 7;
+  repeated Money revenue = 8;
+  optional string average_score = 9;
+  optional string goal_achievement_rate = 10;
+  optional string result_coverage = 11;
+  repeated TeacherStats teachers = 12;
+  optional int32 next_offset = 13;
+  google.protobuf.Timestamp last_processed_at = 14;
+}
+
+message PageInput {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message RegisterInput {
+  string operation_id = 1;
+  string email = 2;
+  string password = 3;
+  string name = 4;
+  RegistrationRole role = 5;
+  optional string learning_goal = 6;
+}
+
+message LoginInput {
+  string email = 1;
+  string password = 2;
+}
+
+message TeacherFilter {
+  optional string subject_id = 1;
+  optional string min_rating = 2;
+  optional string min_price = 3;
+  optional string max_price = 4;
+  optional string currency = 5;
+  TeacherSort sort = 6;
+}
+
+message TeacherProfileInput {
+  string operation_id = 1;
+  string display_name = 2;
+  string bio = 3;
+  string price = 4;
+  string currency = 5;
+  repeated string subject_ids = 6;
+}
+
+message SlotInput {
+  optional string id = 1;
+  google.protobuf.Timestamp starts_at = 2;
+  google.protobuf.Timestamp ends_at = 3;
+}
+
+message AvailabilityInput {
+  string operation_id = 1;
+  string subject_id = 2;
+  repeated SlotInput upsert = 3;
+  repeated string remove_ids = 4;
+}
+
+message BookLessonInput {
+  string operation_id = 1;
+  string teacher_id = 2;
+  string subject_id = 3;
+  string slot_id = 4;
+  string topic = 5;
+}
+
+message LessonCommandInput {
+  string operation_id = 1;
+  string lesson_id = 2;
+  int64 expected_version = 3;
+}
+
+message RescheduleInput {
+  string operation_id = 1;
+  string lesson_id = 2;
+  string new_slot_id = 3;
+  int64 expected_version = 4;
+}
+
+message PaymentInput {
+  string operation_id = 1;
+  string booking_id = 2;
+}
+
+message CompleteLessonInput {
+  string operation_id = 1;
+  string lesson_id = 2;
+  int64 expected_version = 3;
+  string result_text = 4;
+  GoalOutcome goal_outcome = 5;
+}
+
+message ReviewInput {
+  string operation_id = 1;
+  string booking_id = 2;
+  int32 score = 3;
+  string text = 4;
+}
+
+message ReadNotificationInput {
+  string operation_id = 1;
+  string notification_id = 2;
+}
+
+message UserStatusInput {
+  string operation_id = 1;
+  string user_id = 2;
+  UserStatus status = 3;
+}
+
+message SubjectInput {
+  string operation_id = 1;
+  SubjectAction action = 2;
+  optional string id = 3;
+  string name = 4;
+  string description = 5;
+  bool active = 6;
+}
+
+message LessonFilter {
+  google.protobuf.Timestamp from = 1;
+  google.protobuf.Timestamp to = 2;
+  optional LessonStatus status = 3;
+}
+
+message AnalyticsInput {
+  google.protobuf.Timestamp from = 1;
+  google.protobuf.Timestamp to = 2;
+  optional string teacher_id = 3;
+  PageInput page = 4;
+}
+
+message ValidateSessionRequest {
+  string token = 1;
+}
+
+message Actor {
+  string user_id = 1;
+  Role role = 2;
+  string session_id = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message GetTeachingOfferRequest {
+  string teacher_id = 1;
+  string subject_id = 2;
+}
+
+message TeachingOffer {
+  string teacher_id = 1;
+  string teacher_user_id = 2;
+  string subject_id = 3;
+  Money price = 4;
+  google.protobuf.Timestamp valid_at = 5;
+}
+
+message BeginPaymentRequest {
+  string booking_id = 1;
+  string operation_id = 2;
+}
+
+message PaymentContext {
+  string booking_id = 1;
+  string lesson_id = 2;
+  string teacher_id = 3;
+  string student_id = 4;
+  Money price = 5;
+  repeated string recipient_user_ids = 6;
+}
+
+message GetReviewEligibilityRequest {
+  string booking_id = 1;
+}
+
+message ReviewEligibility {
+  string booking_id = 1;
+  string student_id = 2;
+  string teacher_id = 3;
+  google.protobuf.Timestamp completed_at = 4;
+}
+
+message GetMeRequest {
+}
+message GetMeResponse {
+  User result = 1;
+}
+
+message ListUsersRequest {
+  PageInput page = 1;
+}
+message ListUsersResponse {
+  UserPage result = 1;
+}
+
+message SearchTeachersRequest {
+  TeacherFilter filter = 1;
+  PageInput page = 2;
+}
+message SearchTeachersResponse {
+  TeacherPage result = 1;
+}
+
+message GetTeacherRequest {
+  string id = 1;
+}
+message GetTeacherResponse {
+  Teacher result = 1;
+}
+
+message ListSubjectsRequest {
+  PageInput page = 1;
+  bool include_inactive = 2;
+}
+message ListSubjectsResponse {
+  SubjectPage result = 1;
+}
+
+message ListAvailableSlotsRequest {
+  string teacher_id = 1;
+  google.protobuf.Timestamp from = 2;
+  google.protobuf.Timestamp to = 3;
+  PageInput page = 4;
+}
+message ListAvailableSlotsResponse {
+  SlotPage result = 1;
+}
+
+message GetMyScheduleRequest {
+  google.protobuf.Timestamp from = 1;
+  google.protobuf.Timestamp to = 2;
+  PageInput page = 3;
+}
+message GetMyScheduleResponse {
+  SlotPage result = 1;
+}
+
+message ListLessonsRequest {
+  LessonFilter filter = 1;
+  PageInput page = 2;
+}
+message ListLessonsResponse {
+  LessonPage result = 1;
+}
+
+message ListMyBookingsRequest {
+  PageInput page = 1;
+}
+message ListMyBookingsResponse {
+  BookingPage result = 1;
+}
+
+message ListMyPaymentsRequest {
+  PageInput page = 1;
+}
+message ListMyPaymentsResponse {
+  PaymentPage result = 1;
+}
+
+message ListReviewsRequest {
+  string teacher_id = 1;
+  PageInput page = 2;
+}
+message ListReviewsResponse {
+  ReviewPage result = 1;
+}
+
+message GetRatingRequest {
+  string teacher_id = 1;
+}
+message GetRatingResponse {
+  Rating result = 1;
+}
+
+message ListNotificationsRequest {
+  PageInput page = 1;
+  bool unread_only = 2;
+}
+message ListNotificationsResponse {
+  NotificationPage result = 1;
+}
+
+message GetPlatformAnalyticsRequest {
+  AnalyticsInput input = 1;
+}
+message GetPlatformAnalyticsResponse {
+  Analytics result = 1;
+}
+
+message RegisterRequest {
+  RegisterInput input = 1;
+}
+message RegisterResponse {
+  User result = 1;
+}
+
+message AuthenticateRequest {
+  LoginInput input = 1;
+}
+message AuthenticateResponse {
+  Session result = 1;
+}
+
+message UpdateTeacherProfileRequest {
+  TeacherProfileInput input = 1;
+}
+message UpdateTeacherProfileResponse {
+  Teacher result = 1;
+}
+
+message SetAvailabilityRequest {
+  AvailabilityInput input = 1;
+}
+message SetAvailabilityResponse {
+  AvailabilityResult result = 1;
+}
+
+message BookLessonRequest {
+  BookLessonInput input = 1;
+}
+message BookLessonResponse {
+  Booking result = 1;
+}
+
+message CancelLessonRequest {
+  LessonCommandInput input = 1;
+}
+message CancelLessonResponse {
+  Booking result = 1;
+}
+
+message RescheduleLessonRequest {
+  RescheduleInput input = 1;
+}
+message RescheduleLessonResponse {
+  Booking result = 1;
+}
+
+message RegisterPaymentRequest {
+  PaymentInput input = 1;
+}
+message RegisterPaymentResponse {
+  Payment result = 1;
+}
+
+message StartLessonRequest {
+  LessonCommandInput input = 1;
+}
+message StartLessonResponse {
+  Lesson result = 1;
+}
+
+message CompleteLessonRequest {
+  CompleteLessonInput input = 1;
+}
+message CompleteLessonResponse {
+  Lesson result = 1;
+}
+
+message AddReviewRequest {
+  ReviewInput input = 1;
+}
+message AddReviewResponse {
+  Review result = 1;
+}
+
+message MarkReadRequest {
+  ReadNotificationInput input = 1;
+}
+message MarkReadResponse {
+  Notification result = 1;
+}
+
+message SetUserStatusRequest {
+  UserStatusInput input = 1;
+}
+message SetUserStatusResponse {
+  User result = 1;
+}
+
+message ManageSubjectRequest {
+  SubjectInput input = 1;
+}
+message ManageSubjectResponse {
+  Subject result = 1;
+}
+
+service Accounts {
+  rpc GetMe(GetMeRequest) returns (GetMeResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+  rpc SetUserStatus(SetUserStatusRequest) returns (SetUserStatusResponse);
+  rpc ValidateSession(ValidateSessionRequest) returns (Actor);
+}
+
+service Catalog {
+  rpc SearchTeachers(SearchTeachersRequest) returns (SearchTeachersResponse);
+  rpc GetTeacher(GetTeacherRequest) returns (GetTeacherResponse);
+  rpc ListSubjects(ListSubjectsRequest) returns (ListSubjectsResponse);
+  rpc UpdateTeacherProfile(UpdateTeacherProfileRequest) returns (UpdateTeacherProfileResponse);
+  rpc ManageSubject(ManageSubjectRequest) returns (ManageSubjectResponse);
+  rpc GetTeachingOffer(GetTeachingOfferRequest) returns (TeachingOffer);
+}
+
+service Learning {
+  rpc ListAvailableSlots(ListAvailableSlotsRequest) returns (ListAvailableSlotsResponse);
+  rpc GetMySchedule(GetMyScheduleRequest) returns (GetMyScheduleResponse);
+  rpc ListLessons(ListLessonsRequest) returns (ListLessonsResponse);
+  rpc ListMyBookings(ListMyBookingsRequest) returns (ListMyBookingsResponse);
+  rpc SetAvailability(SetAvailabilityRequest) returns (SetAvailabilityResponse);
+  rpc BookLesson(BookLessonRequest) returns (BookLessonResponse);
+  rpc CancelLesson(CancelLessonRequest) returns (CancelLessonResponse);
+  rpc RescheduleLesson(RescheduleLessonRequest) returns (RescheduleLessonResponse);
+  rpc StartLesson(StartLessonRequest) returns (StartLessonResponse);
+  rpc CompleteLesson(CompleteLessonRequest) returns (CompleteLessonResponse);
+  rpc BeginPayment(BeginPaymentRequest) returns (PaymentContext);
+  rpc GetReviewEligibility(GetReviewEligibilityRequest) returns (ReviewEligibility);
+}
+
+service Payments {
+  rpc ListMyPayments(ListMyPaymentsRequest) returns (ListMyPaymentsResponse);
+  rpc RegisterPayment(RegisterPaymentRequest) returns (RegisterPaymentResponse);
+}
+
+service Reputation {
+  rpc ListReviews(ListReviewsRequest) returns (ListReviewsResponse);
+  rpc GetRating(GetRatingRequest) returns (GetRatingResponse);
+  rpc AddReview(AddReviewRequest) returns (AddReviewResponse);
+}
+
+service Notifications {
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+  rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
+}
+
+service AnalyticsService {
+  rpc GetPlatformAnalytics(GetPlatformAnalyticsRequest) returns (GetPlatformAnalyticsResponse);
+}

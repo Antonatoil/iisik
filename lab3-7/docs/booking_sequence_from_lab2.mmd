@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant G as Gateway
+    participant L as Занятия
+    participant T as Каталог
+    participant K as Kafka
+    participant NX as Уведомления и аналитика
+    G->>L: BookLesson и доверенный Actor
+    L->>T: GetTeachingOffer
+    T-->>L: Предмет и цена
+    L->>L: Проверка и локальная транзакция с outbox
+    L-->>G: Booking ACTIVE UNPAID
+    L-->>K: LessonBooked
+    K-->>NX: Создание уведомлений и проекции

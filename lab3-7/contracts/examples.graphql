@@ -1,0 +1,24 @@
+query FindTeacher($filter: TeacherFilter!, $page: PageInput!) {
+  teachers(filter: $filter, page: $page) {
+    items { id displayName price { amount currency }
+      metrics { average reviewCount completedCount updatedAt } }
+    nextOffset
+  }
+}
+mutation Book($input: BookLessonInput!) {
+  bookLesson(input: $input) {
+    id status paymentState price { amount currency }
+    lesson { id version slot { startsAt endsAt } }
+  }
+}
+mutation Pay($input: PaymentInput!) {
+  registerPayment(input: $input) {
+    id operationId status money { amount currency } failureCode
+  }
+}
+query Report($input: AnalyticsInput!) {
+  platformAnalytics(input: $input) {
+    lessonsCompleted revenue { amount currency }
+    averageScore goalAchievementRate resultCoverage lastProcessedAt
+  }
+}

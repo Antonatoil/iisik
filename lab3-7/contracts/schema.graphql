@@ -1,0 +1,368 @@
+# Variant 27, lab 2. Executable SDL; business validators are described in README.
+scalar DateTime
+scalar Decimal
+scalar Long
+
+enum Role { STUDENT TEACHER ADMIN }
+enum RegistrationRole { STUDENT TEACHER }
+enum UserStatus { ACTIVE BLOCKED }
+enum TeacherSort { RATING_DESC PRICE_ASC PRICE_DESC POPULARITY_DESC }
+enum SlotStatus { AVAILABLE BOOKED CLOSED REMOVED }
+enum LessonStatus { PLANNED IN_PROGRESS COMPLETED CANCELLED }
+enum BookingStatus { ACTIVE COMPLETED CANCELLED }
+enum PaymentState { UNPAID PROCESSING PAID }
+enum PaymentStatus { CREATED PROCESSING COMPLETED FAILED REJECTED }
+enum GoalOutcome { ACHIEVED NOT_ACHIEVED NOT_ASSESSED }
+enum SubjectAction { CREATE UPDATE }
+
+type Student {
+  id: ID!
+  learningGoal: String
+}
+
+type User {
+  id: ID!
+  role: Role!
+  name: String!
+  email: String!
+  status: UserStatus!
+  student: Student
+}
+
+type Session {
+  token: String!
+  expiresAt: DateTime!
+  user: User!
+}
+
+type Subject {
+  id: ID!
+  name: String!
+  description: String!
+  active: Boolean!
+}
+
+type Money {
+  amount: Decimal!
+  currency: String!
+}
+
+type SearchMetrics {
+  average: Decimal
+  reviewCount: Long!
+  completedCount: Long!
+  lastReviewAt: DateTime
+  updatedAt: DateTime!
+}
+
+type Rating {
+  teacherId: ID!
+  average: Decimal!
+  reviewCount: Long!
+  version: Long!
+  updatedAt: DateTime!
+}
+
+type Teacher {
+  id: ID!
+  displayName: String!
+  bio: String!
+  price: Money!
+  subjects: [Subject!]!
+  metrics: SearchMetrics!
+  rating: Rating
+  reviews(page: PageInput!): [Review!]
+  slots(from: DateTime!, to: DateTime!, page: PageInput!): [Slot!]
+}
+
+type Slot {
+  id: ID!
+  teacherId: ID!
+  startsAt: DateTime!
+  endsAt: DateTime!
+  status: SlotStatus!
+  version: Long!
+}
+
+type Lesson {
+  id: ID!
+  slot: Slot!
+  subjectId: ID!
+  topic: String!
+  status: LessonStatus!
+  resultText: String
+  goalOutcome: GoalOutcome!
+  startedAt: DateTime
+  completedAt: DateTime
+  version: Long!
+}
+
+type Booking {
+  id: ID!
+  studentId: ID!
+  lesson: Lesson!
+  status: BookingStatus!
+  price: Money!
+  paymentState: PaymentState!
+  createdAt: DateTime!
+}
+
+type Payment {
+  id: ID!
+  operationId: ID!
+  bookingId: ID!
+  status: PaymentStatus!
+  money: Money
+  failureCode: String
+  createdAt: DateTime!
+  settledAt: DateTime
+}
+
+type Review {
+  id: ID!
+  teacherId: ID!
+  score: Int!
+  text: String!
+  createdAt: DateTime!
+}
+
+type Notification {
+  id: ID!
+  kind: String!
+  text: String!
+  objectId: ID!
+  createdAt: DateTime!
+  readAt: DateTime
+}
+
+type AvailabilityResult {
+  slots: [Slot!]!
+}
+
+type TeacherPage {
+  items: [Teacher!]!
+  nextOffset: Int
+}
+
+type SubjectPage {
+  items: [Subject!]!
+  nextOffset: Int
+}
+
+type UserPage {
+  items: [User!]!
+  nextOffset: Int
+}
+
+type SlotPage {
+  items: [Slot!]!
+  nextOffset: Int
+}
+
+type LessonPage {
+  items: [Lesson!]!
+  nextOffset: Int
+}
+
+type BookingPage {
+  items: [Booking!]!
+  nextOffset: Int
+}
+
+type PaymentPage {
+  items: [Payment!]!
+  nextOffset: Int
+}
+
+type ReviewPage {
+  items: [Review!]!
+  nextOffset: Int
+}
+
+type NotificationPage {
+  items: [Notification!]!
+  nextOffset: Int
+}
+
+type TeacherStats {
+  teacherId: ID!
+  lessonsCompleted: Long!
+  revenue: [Money!]!
+  averageScore: Decimal
+  currentRating: Decimal
+}
+
+type Analytics {
+  from: DateTime!
+  to: DateTime!
+  activeUsers: Long!
+  lessonsCompleted: Long!
+  cancellations: Long!
+  successfulPayments: Long!
+  failedPayments: Long!
+  revenue: [Money!]!
+  averageScore: Decimal
+  goalAchievementRate: Decimal
+  resultCoverage: Decimal
+  teachers: [TeacherStats!]!
+  nextOffset: Int
+  lastProcessedAt: DateTime
+}
+
+input PageInput {
+  limit: Int! = 20
+  offset: Int! = 0
+}
+
+input RegisterInput {
+  operationId: ID!
+  email: String!
+  password: String!
+  name: String!
+  role: RegistrationRole!
+  learningGoal: String
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+input TeacherFilter {
+  subjectId: ID
+  minRating: Decimal
+  minPrice: Decimal
+  maxPrice: Decimal
+  currency: String
+  sort: TeacherSort! = RATING_DESC
+}
+
+input TeacherProfileInput {
+  operationId: ID!
+  displayName: String!
+  bio: String!
+  price: Decimal!
+  currency: String!
+  subjectIds: [ID!]!
+}
+
+input SlotInput {
+  id: ID
+  startsAt: DateTime!
+  endsAt: DateTime!
+}
+
+input AvailabilityInput {
+  operationId: ID!
+  subjectId: ID!
+  upsert: [SlotInput!]!
+  removeIds: [ID!]!
+}
+
+input BookLessonInput {
+  operationId: ID!
+  teacherId: ID!
+  subjectId: ID!
+  slotId: ID!
+  topic: String!
+}
+
+input LessonCommandInput {
+  operationId: ID!
+  lessonId: ID!
+  expectedVersion: Long!
+}
+
+input RescheduleInput {
+  operationId: ID!
+  lessonId: ID!
+  newSlotId: ID!
+  expectedVersion: Long!
+}
+
+input PaymentInput {
+  operationId: ID!
+  bookingId: ID!
+}
+
+input CompleteLessonInput {
+  operationId: ID!
+  lessonId: ID!
+  expectedVersion: Long!
+  resultText: String!
+  goalOutcome: GoalOutcome!
+}
+
+input ReviewInput {
+  operationId: ID!
+  bookingId: ID!
+  score: Int!
+  text: String!
+}
+
+input ReadNotificationInput {
+  operationId: ID!
+  notificationId: ID!
+}
+
+input UserStatusInput {
+  operationId: ID!
+  userId: ID!
+  status: UserStatus!
+}
+
+input SubjectInput {
+  operationId: ID!
+  action: SubjectAction!
+  id: ID
+  name: String!
+  description: String!
+  active: Boolean!
+}
+
+input LessonFilter {
+  from: DateTime!
+  to: DateTime!
+  status: LessonStatus
+}
+
+input AnalyticsInput {
+  from: DateTime!
+  to: DateTime!
+  teacherId: ID
+  page: PageInput!
+}
+
+type Query {
+  me: User!
+  users(page: PageInput!): UserPage!
+  teachers(filter: TeacherFilter!, page: PageInput!): TeacherPage!
+  teacher(id: ID!): Teacher
+  subjects(page: PageInput!, includeInactive: Boolean! = false): SubjectPage!
+  availableSlots(teacherId: ID!, from: DateTime!, to: DateTime!, page: PageInput!): SlotPage!
+  mySchedule(from: DateTime!, to: DateTime!, page: PageInput!): SlotPage!
+  lessons(filter: LessonFilter!, page: PageInput!): LessonPage!
+  myBookings(page: PageInput!): BookingPage!
+  myPayments(page: PageInput!): PaymentPage!
+  reviews(teacherId: ID!, page: PageInput!): ReviewPage!
+  rating(teacherId: ID!): Rating
+  notifications(page: PageInput!, unreadOnly: Boolean! = false): NotificationPage!
+  platformAnalytics(input: AnalyticsInput!): Analytics!
+}
+
+type Mutation {
+  register(input: RegisterInput!): User!
+  login(input: LoginInput!): Session!
+  updateTeacherProfile(input: TeacherProfileInput!): Teacher!
+  setAvailability(input: AvailabilityInput!): AvailabilityResult!
+  bookLesson(input: BookLessonInput!): Booking!
+  cancelLesson(input: LessonCommandInput!): Booking!
+  rescheduleLesson(input: RescheduleInput!): Booking!
+  registerPayment(input: PaymentInput!): Payment!
+  startLesson(input: LessonCommandInput!): Lesson!
+  completeLesson(input: CompleteLessonInput!): Lesson!
+  addReview(input: ReviewInput!): Review!
+  markNotificationRead(input: ReadNotificationInput!): Notification!
+  setUserStatus(input: UserStatusInput!): User!
+  manageSubject(input: SubjectInput!): Subject!
+}
