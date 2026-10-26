@@ -203,22 +203,76 @@ def booking_lesson(parent, info):
     return ports.GetLesson(parent["lesson_id"])
 
 
-# The full Lab 2 mutation contract remains unchanged, but its implementation
-# is deliberately postponed: Lab 3 requires GraphQL Query, not write workflows.
-MUTATIONS = (
-    "register", "login", "updateTeacherProfile", "setAvailability",
-    "bookLesson", "cancelLesson", "rescheduleLesson", "registerPayment",
-    "startLesson", "completeLesson", "addReview", "markNotificationRead",
-    "setUserStatus", "manageSubject",
-)
+# Lab 4: Mutation resolvers only authorize/delegate; no SQL in Gateway.
+@mutation.field("register")
+def mutate_register(_, info, input):
+    return ports.RegisterUser(input)
 
 
-def unavailable_mutation(_, info, **kwargs):
-    fail("NOT_IMPLEMENTED_IN_LAB3", "Mutation is reserved for the next laboratory works")
+@mutation.field("login")
+def mutate_login(_, info, input):
+    return ports.LoginUser(input)
 
 
-for mutation_name in MUTATIONS:
-    mutation.set_field(mutation_name, unavailable_mutation)
+@mutation.field("updateTeacherProfile")
+def mutate_profile(_, info, input):
+    return ports.UpdateTeacherProfile(actor_of(info, "TEACHER"), input)
+
+
+@mutation.field("setAvailability")
+def mutate_availability(_, info, input):
+    return ports.SetAvailability(actor_of(info, "TEACHER"), input)
+
+
+@mutation.field("bookLesson")
+def mutate_booking(_, info, input):
+    return ports.BookLesson(actor_of(info, "STUDENT"), input)
+
+
+@mutation.field("cancelLesson")
+def mutate_cancel(_, info, input):
+    return ports.ChangeLesson(actor_of(info, "STUDENT", "TEACHER"), input, "cancelLesson")
+
+
+@mutation.field("rescheduleLesson")
+def mutate_reschedule(_, info, input):
+    return ports.ChangeLesson(actor_of(info, "STUDENT", "TEACHER"), input, "rescheduleLesson")
+
+
+@mutation.field("registerPayment")
+def mutate_payment(_, info, input):
+    return ports.RegisterPayment(actor_of(info, "STUDENT"), input)
+
+
+@mutation.field("startLesson")
+def mutate_start(_, info, input):
+    return ports.ChangeLesson(actor_of(info, "TEACHER"), input, "startLesson")
+
+
+@mutation.field("completeLesson")
+def mutate_complete(_, info, input):
+    return ports.ChangeLesson(actor_of(info, "TEACHER"), input, "completeLesson")
+
+
+@mutation.field("addReview")
+def mutate_review(_, info, input):
+    return ports.AddReview(actor_of(info, "STUDENT"), input)
+
+
+@mutation.field("markNotificationRead")
+def mutate_read(_, info, input):
+    return ports.MarkNotificationRead(actor_of(info), input)
+
+
+@mutation.field("setUserStatus")
+def mutate_status(_, info, input):
+    return ports.SetUserStatus(actor_of(info, "ADMIN"), input)
+
+
+@mutation.field("manageSubject")
+def mutate_subject(_, info, input):
+    return ports.ManageSubject(actor_of(info, "ADMIN"), input)
+
 
 schema_path = Path(__file__).resolve().parents[2] / "contracts" / "schema.graphql"
 schema = make_executable_schema(gql(schema_path.read_text(encoding="utf-8")), [

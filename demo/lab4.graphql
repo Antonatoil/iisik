@@ -1,0 +1,35 @@
+# Lab 4 examples. Enter variables in the Explorer Variables panel.
+# Headers: {"Authorization": "Bearer demo-student-token"}
+# 1. Catalogue Query: filtering + sorting
+query Teachers($filter:TeacherFilter!, $page:PageInput!) {
+  teachers(filter:$filter,page:$page) { items { id displayName price{amount currency} metrics{average completedCount} } nextOffset }
+}
+# variables: {"filter":{"sort":"PRICE_ASC","minPrice":"40","maxPrice":"100","currency":"BYN"},"page":{"limit":10,"offset":0}}
+
+# 2. Self-register as STUDENT/TEACHER (no Authorization header needed)
+mutation Register($input:RegisterInput!) { register(input:$input){id name email role} }
+# variables: {"input":{"operationId":"REPLACE_WITH_UUID","email":"newstudent@example.test","password":"LongPassword_123","name":"Ученик","role":"STUDENT"}}
+
+# 3. Login (no Authorization header needed)
+mutation Login($input:LoginInput!) { login(input:$input){token expiresAt user{id role}} }
+# variables: {"input":{"email":"newstudent@example.test","password":"LongPassword_123"}}
+
+# 4. Teacher availability (needs a real TEACHER token)
+mutation SetAvailability($input:AvailabilityInput!) { setAvailability(input:$input){slots{id startsAt status version}} }
+# variables: {"input":{"operationId":"REPLACE_WITH_UUID","subjectId":"00000000-0000-4000-8000-000000000501","upsert":[{"startsAt":"2026-12-15T10:00:00+03:00","endsAt":"2026-12-15T11:00:00+03:00"}],"removeIds":[]}}
+
+# 5. Book an AVAILABLE slot, replace slotId with result of SetAvailability
+mutation Book($input:BookLessonInput!) {bookLesson(input:$input){id price{amount currency} paymentState lesson{id version slot{id}}}}
+# variables: {"input":{"operationId":"REPLACE_WITH_UUID","teacherId":"00000000-0000-4000-8000-000000000201","subjectId":"00000000-0000-4000-8000-000000000501","slotId":"REPLACE_WITH_SLOT_UUID","topic":"Тригонометрия"}}
+
+# 6. Payment simulated (no real acquiring)
+mutation Pay($input:PaymentInput!) {registerPayment(input:$input){id status money{amount currency}}}
+# variables: {"input":{"operationId":"REPLACE_WITH_UUID","bookingId":"REPLACE_WITH_BOOKING_UUID"}}
+
+# 7. Cancel lesson with optimistic concurrency
+mutation Cancel($input:LessonCommandInput!) {cancelLesson(input:$input){id status paymentState}}
+# variables: {"input":{"operationId":"REPLACE_WITH_UUID","lessonId":"REPLACE_WITH_LESSON_UUID","expectedVersion":1}}
+
+# 8. Admin analytics (Header: Bearer demo-admin-token)
+query Analytics($input:AnalyticsInput!) {platformAnalytics(input:$input){activeUsers lessonsCompleted successfulPayments revenue{amount currency} averageScore}}
+# variables: {"input":{"from":"2020-01-01T00:00:00Z","to":"2035-01-01T00:00:00Z","page":{"limit":20,"offset":0}}}

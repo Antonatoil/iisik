@@ -6,7 +6,7 @@ from app.gateway.schema import schema
 from app.transport.mock_ports import ports
 from app.core.db import engine
 
-app = FastAPI(title="Tutoring Platform — Lab 3, Variant 27", version="3.0")
+app = FastAPI(title="Tutoring Platform — Lab 4, Variant 27", version="4.0")
 
 
 async def context_value(request, data=None):
@@ -17,7 +17,7 @@ async def context_value(request, data=None):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "laboratory": 3, "variant": 27}
+    return {"status": "ok", "laboratory": 4, "variant": 27}
 
 
 @app.get("/ready")
