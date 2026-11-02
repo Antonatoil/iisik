@@ -12,10 +12,11 @@ services:
       - tutor_db_data:/var/lib/postgresql/data
       - ./db/init_all.sql:/docker-entrypoint-initdb.d/00_init_all.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "psql -U lab_admin -d tutor_x -tAc 'SELECT count(*) FROM teacher_popularity' 2>/dev/null | grep -q '^2$'"]
+      test: ["CMD-SHELL", "pg_isready -U lab_admin -d tutor_x"]
       interval: 3s
       timeout: 3s
       retries: 30
+      start_period: 5s
   gateway:
     build: .
     environment:
