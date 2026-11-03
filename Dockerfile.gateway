@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /code
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+# Gateway image deliberately does NOT contain app/services or app/core/db.py.
+COPY app/__init__.py app/__init__.py
+COPY app/main.py app/main.py
+COPY app/gateway/ app/gateway/
+COPY app/transport/ app/transport/
+COPY app/core/__init__.py app/core/__init__.py
+COPY app/core/errors.py app/core/errors.py
+COPY app/core/validation.py app/core/validation.py
+COPY contracts/schema.graphql contracts/schema.graphql
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

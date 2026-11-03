@@ -7,6 +7,9 @@ from app.core.validation import valid_id
 def register_payment(actor,arg,booking):
     op=valid_id(arg['operationId'])
     with engine('p').begin() as conn:
+        # Serialize concurrent payments for one booking and repeated operation IDs.
+        execute(conn, 'SELECT pg_advisory_xact_lock(hashtext(:key))', key='payment:'+arg['bookingId'])
+        execute(conn, 'SELECT pg_advisory_xact_lock(hashtext(:key))', key='operation:'+op)
         old=fetch(conn,"""SELECT id::text,operation_id::text,booking_id::text,student_id::text,status,amount,currency,
           failure_code,created_at,settled_at FROM payments WHERE operation_id=CAST(:id AS uuid)""",id=op)
         if old:

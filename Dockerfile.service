@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /code
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+# Internal services do not ship GraphQL Gateway or its direct mock facade.
+COPY app/__init__.py app/__init__.py
+COPY app/service_api.py app/service_api.py
+COPY app/core/ app/core/
+COPY app/services/ app/services/
+COPY app/transport/__init__.py app/transport/__init__.py
+COPY app/transport/rpc_codec.py app/transport/rpc_codec.py
+COPY app/transport/rpc_registry.py app/transport/rpc_registry.py
+EXPOSE 8100
+CMD ["uvicorn", "app.service_api:app", "--host", "0.0.0.0", "--port", "8100"]

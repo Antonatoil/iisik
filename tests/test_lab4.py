@@ -90,9 +90,20 @@ def test_lab4_mutation_flow():
         start_result=require_ok(gql(client,'''mutation($a:LessonCommandInput!){startLesson(input:$a){status version}}''',ttoken,
           {'a':{'operationId':op(),'lessonId':second['lesson']['id'],'expectedVersion':1}}))['startLesson']
         assert start_result['status']=='IN_PROGRESS' and start_result['version']==2
+        complete_operation=op()
         completed=require_ok(gql(client,'''mutation($a:CompleteLessonInput!){completeLesson(input:$a){status goalOutcome version}}''',ttoken,
-          {'a':{'operationId':op(),'lessonId':second['lesson']['id'],'expectedVersion':2,'resultText':'Цель достигнута','goalOutcome':'ACHIEVED'}}))['completeLesson']
+          {'a':{'operationId':complete_operation,'lessonId':second['lesson']['id'],'expectedVersion':2,'resultText':'Цель достигнута','goalOutcome':'ACHIEVED'}}))['completeLesson']
         assert completed['status']=='COMPLETED'
+        # Replaying the same completion must NOT bump the popularity projection version.
+        with engine('x').connect() as conn:
+            p_before=conn.execute(text('SELECT version FROM teacher_popularity WHERE teacher_id=CAST(:id AS uuid)'), {'id':teacher_id}).scalar_one()
+        same=require_ok(gql(client,'''mutation($a:CompleteLessonInput!){completeLesson(input:$a){status version}}''',ttoken,
+          {'a':{'operationId':complete_operation,'lessonId':second['lesson']['id'],'expectedVersion':2,
+                'resultText':'Цель достигнута','goalOutcome':'ACHIEVED'}}))['completeLesson']
+        assert same['status']=='COMPLETED'
+        with engine('x').connect() as conn:
+            p_after=conn.execute(text('SELECT version FROM teacher_popularity WHERE teacher_id=CAST(:id AS uuid)'), {'id':teacher_id}).scalar_one()
+        assert p_after == p_before
         review=require_ok(gql(client,'''mutation($a:ReviewInput!){addReview(input:$a){id score}}''',stoken,
           {'a':{'operationId':op(),'bookingId':second['id'],'score':5,'text':'Всё понятно'}}))['addReview']
         assert review['score']==5

@@ -1,17 +1,18 @@
-"""Local, replaceable adapters implementing the read-side RPC surface of lab 2.
+"""Network-backed MOCK adapter. Same MockRpcPorts API as labs 3/4.
 
-No network requests and no gRPC yet (lab 3 requirement). The gateway receives
-only this transport facade, never another service's SQLAlchemy engine.
+No gRPC or Kafka; transport sends allowlisted HTTP requests to independently
+running service processes. Gateway imports no service/repository modules.
 """
-from app.services import accounts, catalog, learning, payments, reputation, notifications, analytics
-from app.services import accounts_write, catalog_write, learning_write, payments_write, reputation_write, notifications_write, analytics_write
+import os
+import httpx
+from app.core.errors import fail
+from app.transport.rpc_registry import RPC_METHODS, SERVICE_NAMES
+from app.transport.rpc_codec import to_wire, from_wire
 from app.transport import workflows
 
 
 class MockRpcPorts:
-    """The method names intentionally match the RPC verbs in tutoring.proto."""
-
-    # Lab 4 write operations exposed through the mock transport facade.
+    # These orchestrate several services and are deliberately on the gateway side.
     RegisterUser = staticmethod(workflows.register)
     LoginUser = staticmethod(workflows.login)
     UpdateTeacherProfile = staticmethod(workflows.update_teacher_profile)
@@ -24,57 +25,36 @@ class MockRpcPorts:
     SetUserStatus = staticmethod(workflows.set_user_status)
     ManageSubject = staticmethod(workflows.manage_subject)
 
-    # Local service-owned methods. Transport never accesses a foreign repository.
-    RegisterUserLocal = staticmethod(accounts_write.register_user)
-    LoginLocal = staticmethod(accounts_write.login_user)
-    SetUserStatusLocal = staticmethod(accounts_write.set_user_status)
-    UpdateTeacherProfileLocal = staticmethod(catalog_write.update_teacher_profile)
-    ManageSubjectLocal = staticmethod(catalog_write.manage_subject)
-    GetTeachingOffer = staticmethod(catalog_write.teaching_offer)
-    UpdateRatingProjection = staticmethod(catalog_write.update_rating_projection)
-    UpdatePopularity = staticmethod(catalog_write.update_popularity_projection)
-    SetAvailabilityLocal = staticmethod(learning_write.set_availability)
-    BookLessonLocal = staticmethod(learning_write.book_lesson)
-    ChangeLessonLocal = staticmethod(learning_write.change_lesson)
-    GetLessonSnapshot = staticmethod(learning_write.lesson_snapshot)
-    GetBookingSnapshot = staticmethod(learning_write.booking_snapshot)
-    ApplyPaymentToBooking = staticmethod(learning_write.apply_payment)
-    RegisterPaymentLocal = staticmethod(payments_write.register_payment)
-    AddReviewLocal = staticmethod(reputation_write.add_review)
-    MarkNotificationReadLocal = staticmethod(notifications_write.mark_notification_read)
-    SendNotification = staticmethod(notifications_write.notify)
-    ProjectLesson = staticmethod(analytics_write.project_lesson)
-    ProjectPayment = staticmethod(analytics_write.project_payment)
-    ProjectReview = staticmethod(analytics_write.project_review)
-    RecordAuthentication = staticmethod(analytics_write.project_auth)
+    def __getattr__(self, method):
+        if method not in RPC_METHODS:
+            raise AttributeError(method)
+        return lambda *args, **kwargs: self._request(method, args, kwargs)
 
-    # Accounts
-    ValidateSession = staticmethod(accounts.validate_session)
-    GetMe = staticmethod(accounts.get_user)
-    ListUsers = staticmethod(accounts.list_users)
-    GetStudent = staticmethod(accounts.get_student)
-
-    # Catalog
-    SearchTeachers = staticmethod(catalog.search_teachers)
-    GetTeacher = staticmethod(catalog.get_teacher)
-    ListSubjects = staticmethod(catalog.list_subjects)
-    GetTeacherSubjects = staticmethod(catalog.teacher_subjects)
-    GetTeacherMetrics = staticmethod(catalog.metrics)
-
-    # Learning
-    ListAvailableSlots = staticmethod(learning.available_slots)
-    GetMySchedule = staticmethod(learning.my_schedule)
-    ListLessons = staticmethod(learning.lessons_for_actor)
-    ListMyBookings = staticmethod(learning.my_bookings)
-    GetSlot = staticmethod(learning.get_slot)
-    GetLesson = staticmethod(learning.get_lesson)
-
-    # Payments, Reputation, Notifications, Analytics
-    ListMyPayments = staticmethod(payments.my_payments)
-    ListReviews = staticmethod(reputation.list_reviews)
-    GetRating = staticmethod(reputation.get_rating)
-    ListNotifications = staticmethod(notifications.list_notifications)
-    GetPlatformAnalytics = staticmethod(analytics.platform_analytics)
+    @staticmethod
+    def _request(method, args, kwargs):
+        token = os.environ.get('RPC_SHARED_KEY')
+        if not token:
+            fail('CONFIGURATION_ERROR', 'Mock RPC shared secret is missing')
+        owner = RPC_METHODS[method][0]
+        url = 'http://' + SERVICE_NAMES[owner] + ':8100/mock/' + method
+        try:
+            with httpx.Client(timeout=httpx.Timeout(15.0, connect=3.0), trust_env=False) as client:
+                response = client.post(url, json={'args': to_wire(args), 'kwargs': to_wire(kwargs)},
+                                       headers={'X-Mock-Token': token})
+            if response.status_code >= 500:
+                fail('SERVICE_UNAVAILABLE', f'{SERVICE_NAMES[owner]} service returned an error')
+            try:
+                data = response.json()
+            except ValueError:
+                fail('SERVICE_UNAVAILABLE', 'Invalid response from internal service')
+            if not data.get('ok'):
+                error = data.get('error') or {}
+                fail(error.get('code', 'SERVICE_ERROR'), error.get('message', 'Service rejected command'))
+            return from_wire(data['result'])
+        except httpx.TimeoutException:
+            fail('SERVICE_TIMEOUT', f'{SERVICE_NAMES[owner]} service timed out')
+        except httpx.RequestError:
+            fail('SERVICE_UNAVAILABLE', f'{SERVICE_NAMES[owner]} service is not reachable')
 
 
 ports = MockRpcPorts()

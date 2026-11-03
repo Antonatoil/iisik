@@ -4,9 +4,15 @@ from app.core.commands import execute, fetch, now
 
 
 def project_lesson(s):
-    if not s:return
+    """Project each lesson version once, together with teacher popularity.
+
+    Single DB-X transaction prevents half-applied fact/popularity projections.
+    Repeating completion with the same version MUST NOT increment popularity.
+    """
+    if not s:
+        return None
     with engine('x').begin() as conn:
-        execute(conn,"""INSERT INTO lesson_facts(lesson_id,booking_id,teacher_id,student_id,subject_id,starts_at,ends_at,
+        updated = execute(conn,"""INSERT INTO lesson_facts(lesson_id,booking_id,teacher_id,student_id,subject_id,starts_at,ends_at,
            status,booked_at,cancelled_at,completed_at,goal_achieved,version)
            VALUES(CAST(:lesson AS uuid),CAST(:booking AS uuid),CAST(:teacher AS uuid),CAST(:student AS uuid),
            CAST(:subject AS uuid),:starts,:ends,:status,now(),:cancelled,:completed,:goal,:version)
@@ -17,14 +23,17 @@ def project_lesson(s):
            lesson=s['id'],booking=s['booking_id'],teacher=s['teacher_id'],student=s['student_id'],subject=s['subject_id'],
            starts=s['starts_at'],ends=s['ends_at'],status=s['status'],cancelled=None if s['status']!='CANCELLED' else now(),
            completed=s['completed_at'],goal=s['goal_achieved'],version=s['version'])
-    if s['status']=='COMPLETED':
-        with engine('x').begin() as conn:
-            record=fetch(conn,"""SELECT count(*) AS n FROM lesson_facts WHERE teacher_id=CAST(:t AS uuid) AND status='COMPLETED'""",t=s['teacher_id'])
-            execute(conn,"""INSERT INTO teacher_popularity(teacher_id,completed_count,version,updated_at)
-              VALUES(CAST(:teacher AS uuid),:n,1,now()) ON CONFLICT(teacher_id) DO UPDATE
-              SET completed_count=excluded.completed_count,version=teacher_popularity.version+1,updated_at=now()""",teacher=s['teacher_id'],n=record['n'])
-            v=fetch(conn,'SELECT completed_count,version FROM teacher_popularity WHERE teacher_id=CAST(:t AS uuid)',t=s['teacher_id'])
-        return v
+        if s['status'] == 'COMPLETED':
+            if updated.rowcount:
+                record = fetch(conn,"""SELECT count(*) AS n FROM lesson_facts
+                    WHERE teacher_id=CAST(:t AS uuid) AND status='COMPLETED'""",t=s['teacher_id'])
+                execute(conn,"""INSERT INTO teacher_popularity(teacher_id,completed_count,version,updated_at)
+                    VALUES(CAST(:teacher AS uuid),:n,1,now()) ON CONFLICT(teacher_id) DO UPDATE
+                    SET completed_count=excluded.completed_count,
+                    version=teacher_popularity.version+1,updated_at=now()""",
+                    teacher=s['teacher_id'],n=record['n'])
+            return fetch(conn,'SELECT completed_count,version FROM teacher_popularity WHERE teacher_id=CAST(:t AS uuid)',t=s['teacher_id'])
+    return None
 
 
 def project_payment(payment,booking):

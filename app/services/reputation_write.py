@@ -14,6 +14,8 @@ def add_review(actor,arg,booking):
     with engine('r').begin() as conn:
         cached=check_receipt(conn,arg['operationId'],actor['id'],'addReview',arg)
         if cached:return cached
+        # Serialize concurrent reviews of the same booking before checking uniqueness.
+        execute(conn, 'SELECT pg_advisory_xact_lock(hashtext(:key))', key='review:'+arg['bookingId'])
         business_condition(fetch(conn,'SELECT id FROM reviews WHERE booking_id=CAST(:id AS uuid)',id=arg['bookingId']) is None,
             'ALREADY_REVIEWED','One review allowed per booking')
         rid=new_id()

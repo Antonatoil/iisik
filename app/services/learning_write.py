@@ -55,13 +55,14 @@ def set_availability(actor,arg):
 
 
 def book_lesson(actor,arg,offer):
-    business_condition(offer is not None,'INVALID_OFFER','Teacher does not teach this active subject')
+    # Receipt is checked first so a retry survives later edits to teacher offerings.
     slot_id=valid_id(arg['slotId'])
     business_condition(bool(arg['topic'].strip()) and len(arg['topic'])<=200,'BAD_USER_INPUT','Topic is required')
     with engine('l').begin() as conn:
-        _teacher_lock(conn,offer['teacher_id'])
+        _teacher_lock(conn,arg['teacherId'])
         cached=check_receipt(conn,arg['operationId'],actor['id'],'bookLesson',arg)
         if cached:return cached
+        business_condition(offer is not None,'INVALID_OFFER','Teacher does not teach this active subject')
         s=fetch(conn,SLOT_SELECT,id=slot_id)
         business_condition(s is not None and s['teacher_id']==offer['teacher_id'],'NOT_FOUND','Slot is missing')
         business_condition(s['status']=='AVAILABLE' and s['starts_at']>now(),'SLOT_UNAVAILABLE','Slot is not free or already started')

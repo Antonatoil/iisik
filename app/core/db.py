@@ -1,24 +1,27 @@
-"""Independent connection pools per database; no cross-database joins."""
+"""Database-per-service enforcement: each runtime can access its own DB only."""
 import os
 from functools import lru_cache
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import URL
 
-DATABASES = frozenset("atlprnx")
+DATABASES = frozenset('atlprnx')
 
 
 @lru_cache(maxsize=7)
 def engine(owner: str) -> Engine:
     if owner not in DATABASES:
-        raise ValueError("Unknown service database")
+        raise ValueError('Unknown service database')
+    assigned = os.environ.get('SERVICE_OWNER')
+    if assigned is not None and owner != assigned:
+        raise PermissionError('Service is forbidden to open another service database')
     url = URL.create(
-        drivername="postgresql+psycopg",
-        username=f"svc_{owner}",
-        password=os.environ.get("DB_PASSWORD", "service_demo_only"),
-        host=os.environ.get("DB_HOST", "localhost"),
-        port=int(os.environ.get("DB_PORT", "5434")),
-        database=f"tutor_{owner}",
+        drivername='postgresql+psycopg',
+        username=f'svc_{owner}',
+        password=os.environ.get('DB_PASSWORD', 'service_demo_only'),
+        host=os.environ.get('DB_HOST', 'localhost'),
+        port=int(os.environ.get('DB_PORT', '5434')),
+        database=f'tutor_{owner}',
     )
     return create_engine(url, pool_pre_ping=True, pool_size=3, max_overflow=2)
 

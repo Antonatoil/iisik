@@ -40,6 +40,8 @@ def execute(conn, sql, **params):
 
 def check_receipt(conn, op_id, actor_id, command, payload):
     op_id = valid_id(op_id)
+    # Lock per operation ID BEFORE checking its receipt: concurrent retries serialize.
+    execute(conn, 'SELECT pg_advisory_xact_lock(hashtext(:key))', key='operation:'+op_id)
     found = fetch(conn, "SELECT actor_user_id::text AS actor, command, request_hash, response FROM command_receipts WHERE operation_id=CAST(:id AS uuid)", id=op_id)
     if not found:
         return None

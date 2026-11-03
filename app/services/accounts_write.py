@@ -43,6 +43,8 @@ def register_user(arg):
     data = {'email':email, 'role':arg['role'], 'name':name, 'goal':arg.get('learningGoal'), 'password_sig':sig}
     uid = new_id()
     with engine('a').begin() as conn:
+        execute(conn, 'SELECT pg_advisory_xact_lock(hashtext(:key))', key='operation:'+valid_id(arg['operationId']))
+        execute(conn, 'SELECT pg_advisory_xact_lock(hashtext(:key))', key='register:'+email)
         found = fetch(conn, 'SELECT response FROM command_receipts WHERE operation_id=CAST(:op AS uuid)', op=valid_id(arg['operationId']))
         if found:
             record = fetch(conn, "SELECT actor_user_id::text AS actor, command,request_hash,response FROM command_receipts WHERE operation_id=CAST(:op AS uuid)", op=arg['operationId'])

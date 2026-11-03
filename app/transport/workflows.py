@@ -1,10 +1,14 @@
-"""Local mock workflow coordinator. Only calls ports, never opens another service's DB.
-No true distributed transaction: follow-up projection/notification delivery is synchronous
-in this educational version and must be made durable by Kafka/outbox in later labs.
+"""Synchronous mock workflow coordinator in Gateway, NO direct SQL.
+
+Multi-service workflows are NOT distributed ACID transactions. Follow-up
+projections remain synchronously delivered mock calls (no Kafka yet).
 """
-from app.core.commands import business_condition
-from app.core.validation import valid_id
-from app.core.errors import require_role
+from app.core.errors import require_role, fail
+
+
+def business_condition(test, code, message):
+    if not test:
+        fail(code, message)
 
 
 def _ports():

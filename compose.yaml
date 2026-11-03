@@ -1,4 +1,28 @@
 name: tutor-lab3-v27
+
+# Lab 4: one public Gateway, seven separately launched service applications,
+# and one PostgreSQL instance with seven independently owned databases.
+x-internal-service: &internal-service
+  build:
+    context: .
+    dockerfile: Dockerfile.service
+  command: ["uvicorn", "app.service_api:app", "--host", "0.0.0.0", "--port", "8100"]
+  environment: &internal-env
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_PASSWORD: ${DB_PASSWORD:-service_demo_only}
+    RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Run installer to generate the .env secret}
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck: &internal-health
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/ready', timeout=3).close()"]
+    interval: 5s
+    timeout: 4s
+    retries: 20
+    start_period: 10s
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -12,21 +36,90 @@ services:
       - tutor_db_data:/var/lib/postgresql/data
       - ./db/init_all.sql:/docker-entrypoint-initdb.d/00_init_all.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lab_admin -d tutor_x"]
-      interval: 3s
-      timeout: 3s
-      retries: 30
+      test: ["CMD-SHELL", "pg_isready -U lab_admin -d postgres"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
       start_period: 5s
-  gateway:
-    build: .
+    restart: unless-stopped
+
+  accounts:
+    <<: *internal-service
     environment:
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_PASSWORD: service_demo_only
+      <<: *internal-env
+      SERVICE_OWNER: a
+      REGISTRATION_HMAC_KEY: ${REGISTRATION_HMAC_KEY:?Run installer to generate the .env secret}
+  catalog:
+    <<: *internal-service
+    environment:
+      <<: *internal-env
+      SERVICE_OWNER: t
+  learning:
+    <<: *internal-service
+    environment:
+      <<: *internal-env
+      SERVICE_OWNER: l
+  payments:
+    <<: *internal-service
+    environment:
+      <<: *internal-env
+      SERVICE_OWNER: p
+  reputation:
+    <<: *internal-service
+    environment:
+      <<: *internal-env
+      SERVICE_OWNER: r
+  notifications:
+    <<: *internal-service
+    environment:
+      <<: *internal-env
+      SERVICE_OWNER: n
+  analytics:
+    <<: *internal-service
+    environment:
+      <<: *internal-env
+      SERVICE_OWNER: x
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Run installer to generate the .env secret}
+      SERVICE_OWNER: gateway
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      accounts: {condition: service_healthy}
+      catalog: {condition: service_healthy}
+      learning: {condition: service_healthy}
+      payments: {condition: service_healthy}
+      reputation: {condition: service_healthy}
+      notifications: {condition: service_healthy}
+      analytics: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  tests:
+    profiles: ["test"]
+    build: .
+    command: ["python", "-m", "pytest", "-q"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_PASSWORD: ${DB_PASSWORD:-service_demo_only}
+      RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Run installer to generate the .env secret}
+      # Only the temporary test runner receives DB credentials for test fixtures.
+      # This is NOT part of the running Gateway or its service architecture.
+    depends_on:
+      gateway: {condition: service_healthy}
+    restart: "no"
+
 volumes:
   tutor_db_data:
