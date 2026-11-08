@@ -1,4 +1,4 @@
-"""Synchronous mock delivery to own DB-X projections; replace with Kafka consumers later."""
+"""Local DB-X projection functions (Lab 6 Kafka consumers own normal delivery)."""
 from app.core.db import engine
 from app.core.commands import execute, fetch, now
 

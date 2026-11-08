@@ -1,0 +1,26 @@
+# Real Lab 6 transport demonstrations. Obtain JWT first using login.
+# POST http://localhost:8000/graphql/ ; header Authorization: Bearer <JWT>
+
+# 1. Public login (delegated to independent Auth Service):
+mutation Login($input: LoginInput!) {
+  login(input:$input) { token expiresAt user { id role } }
+}
+# 2. Read teacher offers (gRPC Catalog and nested gRPC Reputation):
+query Teachers {
+  teachers(filter:{sort:RATING_DESC},page:{limit:10,offset:0}) {
+    items { id displayName price {amount currency} rating {average reviewCount} }
+  }
+}
+# 3. Booking (gRPC Catalog.GetTeachingOffer -> Learning.BookLessonLocal;
+# Learning outbox -> Kafka -> Notifications + Analytics consumers):
+mutation Book($input: BookLessonInput!) {
+  bookLesson(input:$input) { id status paymentState lesson { id status } }
+}
+# 4. Demo payment (gRPC Learning + Payments; Payments outbox -> Kafka):
+mutation Pay($input: PaymentInput!) {
+  registerPayment(input:$input) { id status money {amount currency} }
+}
+# 5. Read the event-driven result (may be eventual):
+query MyNotifications {
+  notifications(page:{limit:20,offset:0}) { items {id kind text createdAt} }
+}

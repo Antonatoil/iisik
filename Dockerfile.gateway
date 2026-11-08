@@ -3,12 +3,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /code
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-# Gateway image deliberately does NOT contain app/services or app/core/db.py.
+COPY contracts/__init__.py contracts/__init__.py
+COPY contracts/tutoring.proto contracts/tutoring.proto
+COPY contracts/integration.proto contracts/integration.proto
+RUN python -m grpc_tools.protoc -I. -I/usr/local/lib/python3.11/site-packages/grpc_tools/_proto --python_out=. --grpc_python_out=. \
+    contracts/tutoring.proto contracts/integration.proto
+COPY contracts/schema.graphql contracts/schema.graphql
 COPY app/__init__.py app/__init__.py
 COPY app/main.py app/main.py
 COPY app/gateway/ app/gateway/
 COPY app/transport/__init__.py app/transport/__init__.py
-COPY app/transport/mock_ports.py app/transport/mock_ports.py
+COPY app/transport/grpc_ports.py app/transport/grpc_ports.py
 COPY app/transport/workflows.py app/transport/workflows.py
 COPY app/transport/auth_client.py app/transport/auth_client.py
 COPY app/transport/rpc_codec.py app/transport/rpc_codec.py
@@ -16,6 +21,5 @@ COPY app/transport/rpc_registry.py app/transport/rpc_registry.py
 COPY app/core/__init__.py app/core/__init__.py
 COPY app/core/errors.py app/core/errors.py
 COPY app/core/validation.py app/core/validation.py
-COPY contracts/schema.graphql contracts/schema.graphql
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

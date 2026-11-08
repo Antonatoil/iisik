@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 from tests.demo_auth import demo_token
-from app.transport.mock_ports import ports
+from app.transport.grpc_ports import ports
 from app.transport.rpc_registry import RPC_METHODS, SERVICE_NAMES
 from app.transport.rpc_codec import to_wire, from_wire
 from datetime import datetime, timezone
@@ -32,43 +32,50 @@ def test_seven_separate_service_applications_and_db_ownership():
 
 
 def test_internal_services_reject_untrusted_or_foreign_calls():
-    with httpx.Client(trust_env=False, timeout=4) as client:
-        unauth = client.post('http://learning:8100/mock/GetSlot', json={'args': ['not-uuid'], 'kwargs': {}})
-        assert unauth.status_code == 401
-        headers = {'X-Mock-Token': os.environ['RPC_SHARED_KEY']}
-        forbidden = client.post('http://accounts:8100/mock/GetSlot', headers=headers,
-                                json={'args': ['not-uuid'], 'kwargs': {}})
-        assert forbidden.status_code == 404
+    import grpc
+    from contracts import integration_pb2, integration_pb2_grpc
+    from app.transport.grpc_ports import channel_for
+    stub = integration_pb2_grpc.InternalOperationsStub(channel_for('l'))
+    with pytest.raises(grpc.RpcError) as denied:
+        stub.Check(integration_pb2.HealthRequest(), timeout=4)
+    assert denied.value.code() == grpc.StatusCode.UNAUTHENTICATED
+    stub_a=integration_pb2_grpc.InternalOperationsStub(channel_for('a'))
+    payload=integration_pb2.InvokeRequest(args_json=b'[]',kwargs_json=b'{}')
+    with pytest.raises(grpc.RpcError) as forbidden:
+        stub_a.GetSlot(payload,metadata=(('x-rpc-secret',os.environ['RPC_SHARED_KEY']),),timeout=4)
+    assert forbidden.value.code() == grpc.StatusCode.NOT_FOUND
 
 
-def test_gateway_is_only_public_graphql_and_remote_mock_keeps_interface():
-    # No imports from app.services or app.core.db in either Gateway entrypoint or mock adapter.
+def test_gateway_is_only_public_graphql_and_real_grpc_keeps_interface():
     main = (Path(__file__).parents[1] / 'app' / 'main.py').read_text('utf-8')
-    adapter = (Path(__file__).parents[1] / 'app' / 'transport' / 'mock_ports.py').read_text('utf-8')
-    assert 'from app.services import' not in main + adapter
+    adapter = (Path(__file__).parents[1] / 'app' / 'transport' / 'grpc_ports.py').read_text('utf-8')
     gateway_dockerfile = (Path(__file__).parents[1] / 'Dockerfile.gateway').read_text('utf-8')
     assert 'COPY app/services/' not in gateway_dockerfile
     assert 'COPY app/core/db.py' not in gateway_dockerfile
     assert 'from app.core.db import' not in main + adapter
-    for method in ('ValidateSession', 'SearchTeachers', 'ListAvailableSlots', 'RegisterPaymentLocal'):
-        assert callable(getattr(ports, method))
-        assert method in RPC_METHODS
+    assert not (Path(__file__).parents[1] / 'app/transport/mock_ports.py').exists()
+    for method in ('ValidateSession','SearchTeachers','ListAvailableSlots','RegisterPaymentLocal'):
+        assert callable(getattr(ports,method)) and method in RPC_METHODS
     with TestClient(app) as client:
-        ready = client.get('/ready')
-        assert ready.status_code == 200, ready.text
-        assert len(ready.json()['services']) == 7
+        ready=client.get('/ready')
+        assert ready.status_code==200,ready.text
+        assert len(ready.json()['services'])==7
 
 
-def test_mock_transport_reports_upstream_outage_as_business_error(monkeypatch):
+def test_grpc_transport_reports_upstream_outage_as_business_error(monkeypatch):
+    import grpc
+    from app.transport import grpc_ports
+    class Unavailable(grpc.RpcError):
+        def code(self):return grpc.StatusCode.UNAVAILABLE
+    def broken(*args,**kwargs):raise Unavailable()
+    class DeadStub:
+        def __init__(self, channel):pass
+        def GetMe(self, *args, **kwargs):raise Unavailable()
+    monkeypatch.setattr(grpc_ports.integration_pb2_grpc,'InternalOperationsStub',DeadStub)
     from graphql import GraphQLError
-
-    def disconnected(*args, **kwargs):
-        raise httpx.ConnectError('Simulated outage')
-
-    monkeypatch.setattr(httpx.Client, 'post', disconnected)
     with pytest.raises(GraphQLError) as error:
         ports.GetMe('00000000-0000-4000-8000-000000000001')
-    assert error.value.extensions['code'] == 'SERVICE_UNAVAILABLE'
+    assert error.value.extensions['code']=='SERVICE_UNAVAILABLE'
 
 
 def test_query_filter_sort_and_aggregate_remain_available():

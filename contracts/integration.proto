@@ -1,0 +1,63 @@
+syntax = "proto3";
+package tutoring.integration.v1;
+// Extension of the typed Lab-2 contract. Every existing Lab-4 operation has a
+// concrete protobuf RPC method. Typed tutoring.v1.Catalog.GetTeachingOffer
+// and tutoring.v1.Reputation.GetRating are also used on live paths.
+message InvokeRequest {
+  bytes args_json = 1;
+  bytes kwargs_json = 2;
+}
+message InvokeReply {
+  bool ok = 1;
+  bytes result_json = 2;
+  string error_code = 3;
+  string error_message = 4;
+}
+message HealthRequest {}
+message HealthReply { string service = 1; bool ready = 2; }
+service InternalOperations {
+  rpc Check(HealthRequest) returns (HealthReply);
+  rpc ValidateSession(InvokeRequest) returns (InvokeReply);
+  rpc ReadCredentialForAuth(InvokeRequest) returns (InvokeReply);
+  rpc GetMe(InvokeRequest) returns (InvokeReply);
+  rpc ListUsers(InvokeRequest) returns (InvokeReply);
+  rpc GetStudent(InvokeRequest) returns (InvokeReply);
+  rpc RegisterUserLocal(InvokeRequest) returns (InvokeReply);
+  rpc LoginLocal(InvokeRequest) returns (InvokeReply);
+  rpc SetUserStatusLocal(InvokeRequest) returns (InvokeReply);
+  rpc SearchTeachers(InvokeRequest) returns (InvokeReply);
+  rpc GetTeacher(InvokeRequest) returns (InvokeReply);
+  rpc ListSubjects(InvokeRequest) returns (InvokeReply);
+  rpc GetTeacherSubjects(InvokeRequest) returns (InvokeReply);
+  rpc GetTeacherMetrics(InvokeRequest) returns (InvokeReply);
+  rpc UpdateTeacherProfileLocal(InvokeRequest) returns (InvokeReply);
+  rpc ManageSubjectLocal(InvokeRequest) returns (InvokeReply);
+  rpc GetTeachingOffer(InvokeRequest) returns (InvokeReply);
+  rpc UpdateRatingProjection(InvokeRequest) returns (InvokeReply);
+  rpc UpdatePopularity(InvokeRequest) returns (InvokeReply);
+  rpc ListAvailableSlots(InvokeRequest) returns (InvokeReply);
+  rpc GetMySchedule(InvokeRequest) returns (InvokeReply);
+  rpc ListLessons(InvokeRequest) returns (InvokeReply);
+  rpc ListMyBookings(InvokeRequest) returns (InvokeReply);
+  rpc GetSlot(InvokeRequest) returns (InvokeReply);
+  rpc GetLesson(InvokeRequest) returns (InvokeReply);
+  rpc SetAvailabilityLocal(InvokeRequest) returns (InvokeReply);
+  rpc BookLessonLocal(InvokeRequest) returns (InvokeReply);
+  rpc ChangeLessonLocal(InvokeRequest) returns (InvokeReply);
+  rpc GetLessonSnapshot(InvokeRequest) returns (InvokeReply);
+  rpc GetBookingSnapshot(InvokeRequest) returns (InvokeReply);
+  rpc ApplyPaymentToBooking(InvokeRequest) returns (InvokeReply);
+  rpc ListMyPayments(InvokeRequest) returns (InvokeReply);
+  rpc RegisterPaymentLocal(InvokeRequest) returns (InvokeReply);
+  rpc ListReviews(InvokeRequest) returns (InvokeReply);
+  rpc GetRating(InvokeRequest) returns (InvokeReply);
+  rpc AddReviewLocal(InvokeRequest) returns (InvokeReply);
+  rpc ListNotifications(InvokeRequest) returns (InvokeReply);
+  rpc MarkNotificationReadLocal(InvokeRequest) returns (InvokeReply);
+  rpc SendNotification(InvokeRequest) returns (InvokeReply);
+  rpc GetPlatformAnalytics(InvokeRequest) returns (InvokeReply);
+  rpc ProjectLesson(InvokeRequest) returns (InvokeReply);
+  rpc ProjectPayment(InvokeRequest) returns (InvokeReply);
+  rpc ProjectReview(InvokeRequest) returns (InvokeReply);
+  rpc RecordAuthentication(InvokeRequest) returns (InvokeReply);
+}

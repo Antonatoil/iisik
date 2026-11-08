@@ -3,12 +3,23 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /code
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-# Auth has NO SQLAlchemy repository, DB credentials or business service code.
+COPY contracts/__init__.py contracts/__init__.py
+COPY contracts/tutoring.proto contracts/tutoring.proto
+COPY contracts/integration.proto contracts/integration.proto
+COPY contracts/events.schema.json contracts/events.schema.json
+RUN python -m grpc_tools.protoc -I. -I/usr/local/lib/python3.11/site-packages/grpc_tools/_proto --python_out=. --grpc_python_out=. \
+    contracts/tutoring.proto contracts/integration.proto
 COPY app/__init__.py app/__init__.py
 COPY app/auth_service.py app/auth_service.py
+COPY app/events/__init__.py app/events/__init__.py
+COPY app/events/domain.py app/events/domain.py
+COPY app/events/auth_events.py app/events/auth_events.py
 COPY app/transport/__init__.py app/transport/__init__.py
-COPY app/transport/auth_rpc.py app/transport/auth_rpc.py
+COPY app/transport/grpc_ports.py app/transport/grpc_ports.py
+COPY app/transport/workflows.py app/transport/workflows.py
 COPY app/transport/rpc_codec.py app/transport/rpc_codec.py
 COPY app/transport/rpc_registry.py app/transport/rpc_registry.py
+COPY app/core/__init__.py app/core/__init__.py
+COPY app/core/errors.py app/core/errors.py
 EXPOSE 8200
 CMD ["uvicorn", "app.auth_service:app", "--host", "0.0.0.0", "--port", "8200"]

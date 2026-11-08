@@ -3,14 +3,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /code
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-# Internal services do not ship GraphQL Gateway or its direct mock facade.
+COPY contracts/__init__.py contracts/__init__.py
+COPY contracts/tutoring.proto contracts/tutoring.proto
+COPY contracts/integration.proto contracts/integration.proto
+COPY contracts/events.schema.json contracts/events.schema.json
+RUN python -m grpc_tools.protoc -I. -I/usr/local/lib/python3.11/site-packages/grpc_tools/_proto --python_out=. --grpc_python_out=. \
+    contracts/tutoring.proto contracts/integration.proto
 COPY app/__init__.py app/__init__.py
 COPY app/service_api.py app/service_api.py
+COPY app/service_runtime.py app/service_runtime.py
+COPY app/grpc/ app/grpc/
+COPY app/events/ app/events/
 COPY app/core/ app/core/
 COPY app/services/ app/services/
-COPY scripts/seed_lab5_demo.py scripts/seed_lab5_demo.py
 COPY app/transport/__init__.py app/transport/__init__.py
 COPY app/transport/rpc_codec.py app/transport/rpc_codec.py
 COPY app/transport/rpc_registry.py app/transport/rpc_registry.py
-EXPOSE 8100
-CMD ["uvicorn", "app.service_api:app", "--host", "0.0.0.0", "--port", "8100"]
+COPY scripts/seed_lab5_demo.py scripts/seed_lab5_demo.py
+EXPOSE 8100 50051
+CMD ["python", "-m", "app.service_runtime"]

@@ -25,8 +25,11 @@ def register_payment(actor,arg,booking):
             CAST(:lesson AS uuid),:amount,:currency,'COMPLETED',NULL,now(),now(),1)""",
             id=pid,op=op,booking=arg['bookingId'],student=actor['id'],teacher=booking['teacher_id'],lesson=booking['lesson_id'],
             amount=booking['price'],currency=booking['currency'])
-        return _map(fetch(conn,"""SELECT id::text,operation_id::text,booking_id::text,status,amount,currency,failure_code,created_at,settled_at
+        result=_map(fetch(conn,"""SELECT id::text,operation_id::text,booking_id::text,status,amount,currency,failure_code,created_at,settled_at
            FROM payments WHERE id=CAST(:id AS uuid)""",id=pid))
+        from app.events.domain import on_payment
+        on_payment(conn,actor,arg,booking,result)
+        return result
 
 
 def _map(r):

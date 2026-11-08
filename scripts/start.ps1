@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
-Set-Location (Split-Path $PSScriptRoot -Parent)
+Set-Location -LiteralPath (Split-Path $PSScriptRoot -Parent)
 docker compose up -d --build
-if ($LASTEXITCODE -ne 0) { throw 'Failed to start lab 4 services.' }
+if ($LASTEXITCODE -ne 0) { throw 'Lab 6 startup failed.' }
 docker compose ps
 Write-Host 'GraphQL: http://localhost:8000/graphql/'
-Write-Host 'Health: http://localhost:8000/ready'
+Write-Host 'Ready:   http://localhost:8000/ready'

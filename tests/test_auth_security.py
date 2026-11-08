@@ -105,8 +105,11 @@ def test_wrong_password_rejected_and_internal_auth_requires_shared_key():
 
 
 def test_credentials_rpc_not_available_to_other_service_tokens():
-    with httpx.Client(trust_env=False, timeout=4) as client:
-        response = client.post('http://accounts:8100/mock/ReadCredentialForAuth',
-            json={'args':['admin@example.test'],'kwargs':{}},
-            headers={'X-Mock-Token':os.environ['RPC_SHARED_KEY']})
-        assert response.status_code == 401, response.text
+    import grpc
+    from contracts import integration_pb2, integration_pb2_grpc
+    from app.transport.grpc_ports import channel_for
+    stub=integration_pb2_grpc.InternalOperationsStub(channel_for('a'))
+    request=integration_pb2.InvokeRequest(args_json=b'["admin@example.test"]',kwargs_json=b'{}')
+    with __import__('pytest').raises(grpc.RpcError) as err:
+        stub.ReadCredentialForAuth(request,metadata=(('x-rpc-secret',os.environ['RPC_SHARED_KEY']),),timeout=5)
+    assert err.value.code()==grpc.StatusCode.PERMISSION_DENIED

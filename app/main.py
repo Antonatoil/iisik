@@ -1,13 +1,14 @@
 """Public GraphQL Gateway; zero direct SQL or service implementation imports."""
 import httpx
+from confluent_kafka.admin import AdminClient
 from fastapi import FastAPI, HTTPException
 from ariadne.asgi import GraphQL
 from app.gateway.schema import schema
-from app.transport.mock_ports import ports
+from app.transport.grpc_ports import ports
 from app.transport.rpc_registry import SERVICE_NAMES
 from app.transport.auth_client import validate as validate_jwt_session
 
-app = FastAPI(title='Tutoring Platform - Lab 5 / Variant 27', version='5.0')
+app = FastAPI(title='Tutoring Platform - Lab 6 / Variant 27', version='6.0')
 
 
 async def context_value(request, data=None):
@@ -19,12 +20,12 @@ async def context_value(request, data=None):
 
 @app.get('/health')
 def health():
-    return {'status': 'ok', 'laboratory': 5, 'variant': 27}
+    return {'status': 'ok', 'laboratory': 6, 'variant': 27}
 
 
 @app.get('/ready')
 def ready():
-    """Check seven independently deployed services, not their SQL engines."""
+    """Check all seven independent gRPC-backed service processes."""
     databases, services = {}, {}
     with httpx.Client(timeout=httpx.Timeout(3.0, connect=1.5), trust_env=False) as client:
         for owner, name in SERVICE_NAMES.items():
@@ -43,11 +44,18 @@ def ready():
             auth_ready = reply.status_code == 200 and reply.json().get('redis') == 'ok'
     except (httpx.RequestError, ValueError):
         auth_ready = False
-    if any(status != 'ok' for status in services.values()) or not auth_ready:
+    try:
+        kafka_md=AdminClient({'bootstrap.servers':'kafka:9092', 'socket.timeout.ms':2500}).list_topics(
+            topic='tutor.events.v1',timeout=3)
+        kafka_ready = 'tutor.events.v1' in kafka_md.topics and kafka_md.topics['tutor.events.v1'].error is None
+    except Exception:
+        kafka_ready = False
+    if any(status != 'ok' for status in services.values()) or not auth_ready or not kafka_ready:
         raise HTTPException(status_code=503, detail={'services': services, 'databases': databases,
-                                                    'auth': 'ok' if auth_ready else 'unavailable'})
+            'auth': 'ok' if auth_ready else 'unavailable',
+            'kafka': 'ok' if kafka_ready else 'unavailable'})
     return {'status': 'ready', 'services': services, 'databases': databases,
-            'auth': 'ok', 'redis': 'ok'}
+            'auth': 'ok', 'redis': 'ok', 'kafka': 'ok', 'transport': 'grpc'}
 
 
 app.mount('/graphql', GraphQL(schema, debug=False, context_value=context_value))

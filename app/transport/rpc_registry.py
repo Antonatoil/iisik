@@ -1,6 +1,6 @@
-"""Explicit allowlist for the lab-4 mock transport.
+"""Allowlist of domain RPC operations assigned to owning gRPC services.
 
-The names are the existing MockRpcPorts names.  The handler modules are loaded
+The names preserve the existing GraphQL domain adapter API. Modules load
 only inside the owning service process, never inside GraphQL Gateway.
 """
 

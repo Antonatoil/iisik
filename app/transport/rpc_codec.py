@@ -1,9 +1,9 @@
-"""Lossless JSON wire codec for datetime and Decimal across mock HTTP calls."""
+"""Lossless JSON value codec inside Protobuf gRPC integration frames."""
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-_TAG = '__lab4_mock_type__'
+_TAG = '__lab6_wire_type__'
 
 
 def to_wire(value):

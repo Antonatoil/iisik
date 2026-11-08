@@ -2,7 +2,7 @@
 from pathlib import Path
 from graphql import validate_schema, parse
 from app.gateway.schema import schema
-from app.transport.mock_ports import ports
+from app.transport.grpc_ports import ports
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,6 +32,6 @@ def test_each_database_has_own_schema():
     assert sum(init.count(f"CREATE DATABASE tutor_{owner}") for owner in "atlprnx") == 7
 
 
-def test_mock_adapters_expose_expected_read_rpc_methods():
+def test_real_grpc_adapters_expose_expected_read_rpc_methods():
     for method in ("ValidateSession", "SearchTeachers", "ListAvailableSlots", "ListLessons", "ListMyBookings", "ListMyPayments", "ListReviews", "GetRating", "ListNotifications", "GetPlatformAnalytics"):
         assert callable(getattr(ports, method))

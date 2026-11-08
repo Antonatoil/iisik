@@ -1,45 +1,30 @@
 name: tutor-lab3-v27
 
-# Lab 4: one public Gateway, seven separately launched service applications,
-# and one PostgreSQL instance with seven independently owned databases.
+# Each internal service owns ONE database and listens on private gRPC :50051.
 x-internal-service: &internal-service
   build:
     context: .
     dockerfile: Dockerfile.service
-  command: ["uvicorn", "app.service_api:app", "--host", "0.0.0.0", "--port", "8100"]
+  command: ["python", "-m", "app.service_runtime"]
   environment: &internal-env
     DB_HOST: postgres
     DB_PORT: "5432"
     DB_PASSWORD: ${DB_PASSWORD:-service_demo_only}
-    RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Run installer to generate the .env secret}
-  depends_on:
-    postgres:
-      condition: service_healthy
+    RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Generate Lab 5 .env first}
+    KAFKA_BOOTSTRAP: kafka:9092
+  depends_on: &internal-dependencies
+    postgres: {condition: service_healthy}
+    migrate: {condition: service_completed_successfully}
+    kafka-init: {condition: service_completed_successfully}
   healthcheck: &internal-health
     test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/ready', timeout=3).close()"]
     interval: 5s
     timeout: 4s
-    retries: 20
-    start_period: 10s
+    retries: 24
+    start_period: 15s
   restart: unless-stopped
 
 services:
-  redis:
-    image: redis:7-alpine
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run installer to generate the .env secret}
-    # Redis sessions are private to the Compose network, never published to host.
-    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
-    volumes:
-      - tutor_redis_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping 2>/dev/null | grep -q PONG"]
-      interval: 5s
-      timeout: 4s
-      retries: 20
-      start_period: 5s
-    restart: unless-stopped
-
   postgres:
     image: postgres:16-alpine
     environment:
@@ -59,14 +44,92 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Generate Lab 5 .env first}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    volumes:
+      - tutor_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping 2>/dev/null | grep -q PONG"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  # Fix named-volume ownership before Kafka runs as non-root UID 1000.
+  kafka-storage-init:
+    image: postgres:16-alpine
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - "mkdir -p /tmp/kraft-combined-logs && chown -R 1000:1000 /tmp/kraft-combined-logs && chmod 700 /tmp/kraft-combined-logs"
+    volumes:
+      - tutor_kafka_data:/tmp/kraft-combined-logs
+    restart: "no"
+
+  kafka:
+    image: apache/kafka:3.9.1
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_NUM_PARTITIONS: "6"
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    volumes:
+      - tutor_kafka_data:/tmp/kraft-combined-logs
+    depends_on:
+      kafka-storage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 8s
+      retries: 30
+      start_period: 35s
+    restart: unless-stopped
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    entrypoint: ["/bin/bash", "/lab6/create_kafka_topics.sh"]
+    volumes:
+      - ./scripts/create_kafka_topics.sh:/lab6/create_kafka_topics.sh:ro
+    depends_on:
+      kafka: {condition: service_healthy}
+    restart: "no"
+
+  migrate:
+    image: postgres:16-alpine
+    entrypoint: ["/bin/sh", "/lab6/migrate_lab6.sh"]
+    environment:
+      PGPASSWORD: lab_admin_only_dev
+    volumes:
+      - ./scripts/migrate_lab6.sh:/lab6/migrate_lab6.sh:ro
+      - ./db/migrations/006_event_outbox.sql:/lab6/migration.sql:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+
   accounts:
     <<: *internal-service
     environment:
       <<: *internal-env
       SERVICE_OWNER: a
-      LAB5_DEMO_PASSWORD: ${LAB5_DEMO_PASSWORD:?Run installer to generate demo credentials}
-      REGISTRATION_HMAC_KEY: ${REGISTRATION_HMAC_KEY:?Run installer to generate the .env secret}
-      AUTH_REPOSITORY_KEY: ${AUTH_REPOSITORY_KEY:?Run installer to generate the .env secret}
+      LAB5_DEMO_PASSWORD: ${LAB5_DEMO_PASSWORD:?Existing Lab 5 demo credentials required}
+      REGISTRATION_HMAC_KEY: ${REGISTRATION_HMAC_KEY:?Existing Lab 5 key required}
+      AUTH_REPOSITORY_KEY: ${AUTH_REPOSITORY_KEY:?Existing Lab 5 key required}
   catalog:
     <<: *internal-service
     environment:
@@ -104,19 +167,21 @@ services:
       dockerfile: Dockerfile.auth
     command: ["uvicorn", "app.auth_service:app", "--host", "0.0.0.0", "--port", "8200"]
     environment:
-      JWT_SECRET: ${JWT_SECRET:?Run installer to generate the .env secret}
-      AUTH_REPOSITORY_KEY: ${AUTH_REPOSITORY_KEY:?Run installer to generate the .env secret}
-      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?Run installer to generate the .env secret}
-      RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Run installer to generate the .env secret}
-      REDIS_URL: redis://:${REDIS_PASSWORD:?Run installer to generate the .env secret}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?Existing Lab 5 key required}
+      AUTH_REPOSITORY_KEY: ${AUTH_REPOSITORY_KEY:?Existing Lab 5 key required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?Existing Lab 5 key required}
+      RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Existing Lab 5 key required}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Existing Lab 5 key required}@redis:6379/0
+      KAFKA_BOOTSTRAP: kafka:9092
     depends_on:
       redis: {condition: service_healthy}
       accounts: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8200/ready', timeout=3).close()"]
       interval: 5s
       timeout: 4s
-      retries: 20
+      retries: 24
       start_period: 10s
     restart: unless-stopped
 
@@ -126,9 +191,8 @@ services:
       dockerfile: Dockerfile.gateway
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
-      RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Run installer to generate the .env secret}
-      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?Run installer to generate the .env secret}
-      SERVICE_OWNER: gateway
+      RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Existing Lab 5 key required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?Existing Lab 5 key required}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -141,7 +205,7 @@ services:
       notifications: {condition: service_healthy}
       analytics: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3).close()"]
       interval: 5s
       timeout: 4s
       retries: 20
@@ -156,13 +220,12 @@ services:
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_PASSWORD: ${DB_PASSWORD:-service_demo_only}
-      RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Run installer to generate the .env secret}
-      LAB5_DEMO_PASSWORD: ${LAB5_DEMO_PASSWORD:?Run installer to generate demo credentials}
-      # Tests instantiate FastAPI Gateway in-process, so require its Auth client key.
-      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?Run installer to generate the .env secret}
-      REDIS_URL: redis://:${REDIS_PASSWORD:?Run installer to generate the .env secret}@redis:6379/0
-      # Only the temporary test runner receives DB credentials for test fixtures.
-      # This is NOT part of the running Gateway or its service architecture.
+      RPC_SHARED_KEY: ${RPC_SHARED_KEY:?Existing Lab 5 key required}
+      AUTH_REPOSITORY_KEY: ${AUTH_REPOSITORY_KEY:?Existing Lab 5 key required}
+      LAB5_DEMO_PASSWORD: ${LAB5_DEMO_PASSWORD:?Existing Lab 5 key required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?Existing Lab 5 key required}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Existing Lab 5 key required}@redis:6379/0
+      KAFKA_BOOTSTRAP: kafka:9092
     depends_on:
       gateway: {condition: service_healthy}
     restart: "no"
@@ -170,3 +233,4 @@ services:
 volumes:
   tutor_db_data:
   tutor_redis_data:
+  tutor_kafka_data:

@@ -2,6 +2,7 @@
 All identities and operation IDs are fresh, so repeated runs do not conflict.
 """
 from datetime import datetime, timedelta, timezone
+import time
 from uuid import uuid4
 from fastapi.testclient import TestClient
 from app.main import app
@@ -19,6 +20,15 @@ def gql(client, query, token=None, variables=None):
     return response.json()
 
 def op():return str(uuid4())
+
+
+def wait_until(fn, timeout=25):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        value=fn()
+        if value:return value
+        time.sleep(.2)
+    raise AssertionError('Kafka projection did not converge within test deadline')
 
 def require_ok(value):
     assert 'errors' not in value,value
@@ -96,8 +106,10 @@ def test_lab4_mutation_flow():
           {'a':{'operationId':complete_operation,'lessonId':second['lesson']['id'],'expectedVersion':2,'resultText':'Цель достигнута','goalOutcome':'ACHIEVED'}}))['completeLesson']
         assert completed['status']=='COMPLETED'
         # Replaying the same completion must NOT bump the popularity projection version.
-        with engine('x').connect() as conn:
-            p_before=conn.execute(text('SELECT version FROM teacher_popularity WHERE teacher_id=CAST(:id AS uuid)'), {'id':teacher_id}).scalar_one()
+        def popularity():
+            with engine('x').connect() as conn:
+                return conn.execute(text('SELECT version FROM teacher_popularity WHERE teacher_id=CAST(:id AS uuid)'), {'id':teacher_id}).scalar_one_or_none()
+        p_before=wait_until(popularity)
         same=require_ok(gql(client,'''mutation($a:CompleteLessonInput!){completeLesson(input:$a){status version}}''',ttoken,
           {'a':{'operationId':complete_operation,'lessonId':second['lesson']['id'],'expectedVersion':2,
                 'resultText':'Цель достигнута','goalOutcome':'ACHIEVED'}}))['completeLesson']
@@ -108,8 +120,10 @@ def test_lab4_mutation_flow():
         review=require_ok(gql(client,'''mutation($a:ReviewInput!){addReview(input:$a){id score}}''',stoken,
           {'a':{'operationId':op(),'bookingId':second['id'],'score':5,'text':'Всё понятно'}}))['addReview']
         assert review['score']==5
-        n=require_ok(gql(client,'''{notifications(page:{limit:30,offset:0}){items{id readAt}}}''',stoken))['notifications']['items']
-        unread=next(x for x in n if x['readAt'] is None)
+        def unread_notification():
+            n=require_ok(gql(client,'''{notifications(page:{limit:30,offset:0}){items{id readAt}}}''',stoken))['notifications']['items']
+            return next((x for x in n if x['readAt'] is None), None)
+        unread=wait_until(unread_notification)
         nr=require_ok(gql(client,'''mutation($a:ReadNotificationInput!){markNotificationRead(input:$a){id readAt}}''',stoken,
           {'a':{'operationId':op(),'notificationId':unread['id']}}))['markNotificationRead']
         assert nr['readAt']

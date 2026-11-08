@@ -62,32 +62,22 @@ def _internal_guard(request: Request) -> None:
 
 
 def _account_rpc(method: str, *args):
-    url = 'http://accounts:8100/mock/' + method
+    # Credential access is available only to Auth using a dedicated key.
+    from app.transport.grpc_ports import rpc
+    from graphql import GraphQLError
     try:
-        headers = {'X-Mock-Token': os.environ['RPC_SHARED_KEY']}
-        if method == 'ReadCredentialForAuth':
-            headers['X-Auth-Repository-Key'] = os.environ['AUTH_REPOSITORY_KEY']
-        with httpx.Client(timeout=httpx.Timeout(8.0, connect=2.0), trust_env=False) as client:
-            response = client.post(url,
-                                   json={'args': to_wire(list(args)), 'kwargs': {}},
-                                   headers=headers)
-        payload = response.json()
-        if response.status_code >= 500:
-            raise HTTPException(503, 'Account service unavailable')
-        if response.status_code == 422 or not payload.get('ok'):
-            err = payload.get('error') or {}
-            code = err.get('code', 'AUTH_BACKEND_ERROR')
-            # Protect credential checks from account enumeration.
-            if method == 'ReadCredentialForAuth':
-                return None
-            raise HTTPException(400 if code == 'BAD_USER_INPUT' else 409,
-                                detail={'code': code, 'message': err.get('message', 'Operation rejected')})
-        return from_wire(payload['result'])
-    except HTTPException:
-        raise
-    except (httpx.RequestError, httpx.TimeoutException, ValueError, KeyError) as exc:
-        logger.warning('Account service unavailable: %s', type(exc).__name__)
-        raise HTTPException(503, 'Account service unavailable') from exc
+        return rpc('a', method, *args, repo=(method == 'ReadCredentialForAuth'))
+    except GraphQLError as exc:
+        code = (exc.extensions or {}).get('code', 'AUTH_BACKEND_ERROR')
+        if method == 'ReadCredentialForAuth' and code in ('NOT_FOUND', 'BAD_USER_INPUT'):
+            return None
+        # Keep Lab 4 business errors unchanged across the new gRPC boundary.
+        if code in ('SERVICE_UNAVAILABLE', 'SERVICE_TIMEOUT'):
+            raise HTTPException(503, 'Accounts gRPC unavailable') from exc
+        status = 400 if code == 'BAD_USER_INPUT' else 409
+        raise HTTPException(status_code=status,
+                            detail={'code':code,'message':exc.message}) from exc
+
 
 
 def _verify_password(password: str, stored: str) -> bool:
@@ -233,12 +223,12 @@ def login(payload: Envelope, request: Request):
         raise HTTPException(401, 'Invalid credentials')
     user = {k: account[k] for k in ('id', 'name', 'role', 'email', 'status')}
     result = _issue_token(user)
-    # Authentication is complete regardless of an analytics outage.
+    # Authentication is not dependent on analytics; publish the v1 Kafka event.
     try:
-        from app.transport.auth_rpc import internal_rpc
-        internal_rpc('x', 'RecordAuthentication', user)
+        from app.events.auth_events import emit_auth_event
+        emit_auth_event(user)
     except Exception:
-        logger.warning('Could not deliver optional auth metric')
+        logger.warning('Could not publish optional UserAuthenticated event')
     return {'result': result}
 
 

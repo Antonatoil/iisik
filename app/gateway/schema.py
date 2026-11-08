@@ -1,11 +1,11 @@
-"""GraphQL read resolvers stay thin. All domain access goes through mock ports."""
+"""GraphQL resolvers delegate to Auth and real gRPC service ports."""
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from ariadne import QueryType, MutationType, ObjectType, ScalarType, gql, make_executable_schema
 from app.core.errors import fail, require_role
 from app.core.validation import valid_id, valid_page, valid_range
-from app.transport.mock_ports import ports
+from app.transport.grpc_ports import ports
 
 query = QueryType()
 mutation = MutationType()

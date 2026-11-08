@@ -55,6 +55,9 @@ def save_receipt(conn, op_id, actor_id, command, payload, result):
     execute(conn, """INSERT INTO command_receipts(operation_id,actor_user_id,command,request_hash,response,created_at)
       VALUES (CAST(:op AS uuid),CAST(:actor AS uuid),:command,:hash,CAST(:reply AS jsonb),now())""",
       op=valid_id(op_id), actor=actor_id, command=command, hash=digest(payload), reply=canon(safe))
+    # The event is saved in the same local transaction as the command receipt.
+    from app.events.domain import on_receipt
+    on_receipt(conn, op_id, actor_id, command, payload, result)
     return result
 
 

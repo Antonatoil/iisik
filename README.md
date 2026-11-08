@@ -260,3 +260,19 @@ docker compose run --rm tests
 
 Для остановки без удаления PostgreSQL и Redis volume: `docker compose down`.
 **Не использовать `docker compose down -v`.**
+
+---
+
+## ЛР6 — реальные gRPC и Apache Kafka
+
+**Последняя версия:** см. `docs/LAB6_INTEGRATION.md` и `demo/lab6.graphql`.
+HTTP `/mock/{method}` больше нет. Gateway и все бизнес-сервисы обмениваются реальными gRPC-вызовами по protobuf (включая типизированные методы исходного контракта ЛР2); Kafka обрабатывает реальные события бронирования, изменения занятий, оплаты и отзывов через transactional outbox/inbox.
+
+Состав: 7 бизнес-сервисов + Gateway + Auth + PostgreSQL + Redis + Kafka = **12 постоянно работающих контейнеров**. Одноразовые `migrate` и `kafka-init` добавляются при развёртывании. Все данные ЛР5 и история Git сохраняются.
+
+```powershell
+cd 'D:\бгуир\Иисик\lab3-7'
+docker compose up -d --build
+docker compose run --rm tests
+Invoke-RestMethod http://localhost:8000/ready
+```
