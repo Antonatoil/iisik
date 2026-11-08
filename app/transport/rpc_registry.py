@@ -6,7 +6,8 @@ only inside the owning service process, never inside GraphQL Gateway.
 
 RPC_METHODS = {
     # Accounts / DB-A
-    'ValidateSession': ('a', 'accounts.validate_session'),
+    'ValidateSession': ('a', 'accounts.validate_session'),  # retained for Lab-4 compatibility only
+    'ReadCredentialForAuth': ('a', 'accounts.get_credential_for_auth'),
     'GetMe': ('a', 'accounts.get_user'),
     'ListUsers': ('a', 'accounts.list_users'),
     'GetStudent': ('a', 'accounts.get_student'),

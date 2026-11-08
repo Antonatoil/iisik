@@ -5,19 +5,21 @@ from ariadne.asgi import GraphQL
 from app.gateway.schema import schema
 from app.transport.mock_ports import ports
 from app.transport.rpc_registry import SERVICE_NAMES
+from app.transport.auth_client import validate as validate_jwt_session
 
-app = FastAPI(title='Tutoring Platform - Lab 4 / Variant 27', version='4.1')
+app = FastAPI(title='Tutoring Platform - Lab 5 / Variant 27', version='5.0')
 
 
 async def context_value(request, data=None):
     auth = request.headers.get('authorization', '')
     token = auth[7:].strip() if auth.lower().startswith('bearer ') else ''
-    return {'actor': ports.ValidateSession(token) if token else None}
+    # Only Auth Service validates JWT signature + Redis session.
+    return {'actor': validate_jwt_session(token) if token else None, 'token': token}
 
 
 @app.get('/health')
 def health():
-    return {'status': 'ok', 'laboratory': 4, 'variant': 27}
+    return {'status': 'ok', 'laboratory': 5, 'variant': 27}
 
 
 @app.get('/ready')
@@ -34,9 +36,18 @@ def ready():
                 state = 'unavailable'
             databases[owner] = state
             services[name] = state
-    if any(status != 'ok' for status in services.values()):
-        raise HTTPException(status_code=503, detail={'services': services, 'databases': databases})
-    return {'status': 'ready', 'services': services, 'databases': databases}
+    # Auth Service checks Redis and DB-A; Gateway does not access either store.
+    try:
+        with httpx.Client(timeout=httpx.Timeout(3.0, connect=1.5), trust_env=False) as client:
+            reply = client.get('http://auth:8200/ready')
+            auth_ready = reply.status_code == 200 and reply.json().get('redis') == 'ok'
+    except (httpx.RequestError, ValueError):
+        auth_ready = False
+    if any(status != 'ok' for status in services.values()) or not auth_ready:
+        raise HTTPException(status_code=503, detail={'services': services, 'databases': databases,
+                                                    'auth': 'ok' if auth_ready else 'unavailable'})
+    return {'status': 'ready', 'services': services, 'databases': databases,
+            'auth': 'ok', 'redis': 'ok'}
 
 
 app.mount('/graphql', GraphQL(schema, debug=False, context_value=context_value))

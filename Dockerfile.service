@@ -8,6 +8,7 @@ COPY app/__init__.py app/__init__.py
 COPY app/service_api.py app/service_api.py
 COPY app/core/ app/core/
 COPY app/services/ app/services/
+COPY scripts/seed_lab5_demo.py scripts/seed_lab5_demo.py
 COPY app/transport/__init__.py app/transport/__init__.py
 COPY app/transport/rpc_codec.py app/transport/rpc_codec.py
 COPY app/transport/rpc_registry.py app/transport/rpc_registry.py

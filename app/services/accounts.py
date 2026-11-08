@@ -4,6 +4,17 @@ from app.core.db import one, rows
 from app.core.validation import page_result
 
 
+def get_credential_for_auth(email: str) -> dict | None:
+    """Auth-only repository read; credentials never flow through GraphQL Gateway."""
+    if not email or len(email) > 254:
+        return None
+    return one('a', """
+        SELECT id::text AS id, role_code AS role, email, name,
+               status, password_hash
+        FROM users WHERE email=:email
+    """, {'email': email.strip().lower()})
+
+
 def validate_session(token: str) -> dict | None:
     if not token:
         return None

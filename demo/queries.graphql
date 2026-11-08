@@ -1,4 +1,4 @@
-# Student: paste into GraphQL Explorer and set Authorization: Bearer demo-student-token
+# Student: paste into GraphQL Explorer and set Authorization: Bearer <JWT_STUDENT_FROM_LOGIN>
 query Catalogue {
   teachers(filter: { sort: RATING_DESC }, page: { limit: 10, offset: 0 }) {
     items { id displayName bio price { amount currency }
@@ -37,7 +37,7 @@ query TeacherSchedule {
   }
 }
 
-# Admin: Authorization: Bearer demo-admin-token
+# Admin: Authorization: Bearer <JWT_ADMIN_FROM_LOGIN>
 query AdminOverview {
   users(page: {limit: 20, offset: 0}) { items { id name role } }
   platformAnalytics(input: {from: "2020-01-01T00:00:00Z", to: "2035-01-01T00:00:00Z", page: {limit: 20, offset: 0}}) {

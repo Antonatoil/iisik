@@ -53,6 +53,12 @@ async def mock_call(method: str, request: Request):
         raise HTTPException(status_code=401, detail='Unauthorized internal call')
     if method not in handlers:
         raise HTTPException(status_code=404, detail='Unknown service method')
+    if method == 'ReadCredentialForAuth':
+        # Credential hashes must not be visible to other internal service clients.
+        repo_key = os.environ.get('AUTH_REPOSITORY_KEY', '')
+        provided_repo_key = request.headers.get('X-Auth-Repository-Key', '')
+        if not repo_key or not hmac.compare_digest(repo_key, provided_repo_key):
+            raise HTTPException(status_code=401, detail='Auth repository access denied')
     try:
         payload = await request.json()
         if not isinstance(payload, dict) or not isinstance(payload.get('args'), list) or not isinstance(payload.get('kwargs'), dict):

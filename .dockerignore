@@ -5,3 +5,8 @@ __pycache__
 *.pyc
 *.log
 *.zip
+
+# Lab5: never bake local JWT, Redis and demo secrets into test Docker image
+.env
+.env.*
+*_credentials.txt

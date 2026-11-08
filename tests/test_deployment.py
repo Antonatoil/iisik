@@ -7,6 +7,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from tests.demo_auth import demo_token
 from app.transport.mock_ports import ports
 from app.transport.rpc_registry import RPC_METHODS, SERVICE_NAMES
 from app.transport.rpc_codec import to_wire, from_wire
@@ -72,7 +73,7 @@ def test_mock_transport_reports_upstream_outage_as_business_error(monkeypatch):
 
 def test_query_filter_sort_and_aggregate_remain_available():
     with TestClient(app) as client:
-        headers = {'Authorization': 'Bearer demo-student-token'}
+        headers = {'Authorization': 'Bearer ' + demo_token('demo-student-token')}
         response = client.post('/graphql/', json={'query': '''query {
           teachers(filter:{sort:PRICE_ASC,minPrice:"0"},page:{limit:100,offset:0}){
             items{id price{amount currency}}
@@ -84,7 +85,7 @@ def test_query_filter_sort_and_aggregate_remain_available():
         prices = [Decimal(item['price']['amount']) for item in data['data']['teachers']['items']]
         assert prices == sorted(prices)
         assert prices
-        admin = client.post('/graphql/', headers={'Authorization': 'Bearer demo-admin-token'},
+        admin = client.post('/graphql/', headers={'Authorization': 'Bearer ' + demo_token('demo-admin-token')},
                             json={'query': '''query { platformAnalytics(input:{
                               from:"2020-01-01T00:00:00Z",
                               to:"2035-01-01T00:00:00Z",

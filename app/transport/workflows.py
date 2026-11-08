@@ -17,13 +17,14 @@ def _ports():
 
 
 def register(arg):
-    return _ports().RegisterUserLocal(arg)
+    # Lab 5: Gateway routes registration ONLY through independent Auth Service.
+    from app.transport.auth_client import register as auth_register
+    return auth_register(arg)
 
 
 def login(arg):
-    result=_ports().LoginLocal(arg)
-    _ports().RecordAuthentication(result['user'])
-    return result
+    from app.transport.auth_client import login as auth_login
+    return auth_login(arg)
 
 
 def update_teacher_profile(actor,arg):
@@ -95,7 +96,12 @@ def mark_notification_read(actor,arg):
 
 def set_user_status(actor,arg):
     require_role(actor,'ADMIN')
-    return _ports().SetUserStatusLocal(actor,arg)
+    result = _ports().SetUserStatusLocal(actor,arg)
+    if result['status'] == 'BLOCKED':
+        # Auth also checks current DB-A status on every token validation.
+        from app.transport.auth_client import revoke_user
+        revoke_user(result['id'])
+    return result
 
 
 def manage_subject(actor,arg):

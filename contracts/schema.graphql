@@ -351,6 +351,8 @@ type Query {
 }
 
 type Mutation {
+  # Lab 5: revoke active Redis session for this JWT.
+  logout: Boolean!
   register(input: RegisterInput!): User!
   login(input: LoginInput!): Session!
   updateTeacherProfile(input: TeacherProfileInput!): Teacher!

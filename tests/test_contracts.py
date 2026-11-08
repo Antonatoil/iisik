@@ -10,7 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_original_lab2_graphql_contract_is_executable():
     assert not validate_schema(schema)
     assert len(schema.query_type.fields) == 14
-    assert len(schema.mutation_type.fields) == 14
+    # Lab 5 adds logout without removing or renaming the original 14 Mutations.
+    assert len(schema.mutation_type.fields) == 15
+    assert 'logout' in schema.mutation_type.fields
     assert schema.get_type("Teacher") is not None
 
 

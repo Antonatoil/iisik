@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /code
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+# Auth has NO SQLAlchemy repository, DB credentials or business service code.
+COPY app/__init__.py app/__init__.py
+COPY app/auth_service.py app/auth_service.py
+COPY app/transport/__init__.py app/transport/__init__.py
+COPY app/transport/auth_rpc.py app/transport/auth_rpc.py
+COPY app/transport/rpc_codec.py app/transport/rpc_codec.py
+COPY app/transport/rpc_registry.py app/transport/rpc_registry.py
+EXPOSE 8200
+CMD ["uvicorn", "app.auth_service:app", "--host", "0.0.0.0", "--port", "8200"]

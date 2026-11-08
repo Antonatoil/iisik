@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from fastapi.testclient import TestClient
 from app.main import app
+from tests.demo_auth import demo_token
 from app.core.db import engine
 from sqlalchemy import text
 
@@ -12,7 +13,7 @@ ADMIN='demo-admin-token'
 PAGE='{limit:50,offset:0}'
 
 def gql(client, query, token=None, variables=None):
-    h={'Authorization':'Bearer '+token} if token else {}
+    h={'Authorization':'Bearer '+demo_token(token)} if token else {}
     response=client.post('/graphql/',json={'query':query,'variables':variables or {}},headers=h)
     assert response.status_code==200,response.text
     return response.json()

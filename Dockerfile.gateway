@@ -7,7 +7,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/__init__.py app/__init__.py
 COPY app/main.py app/main.py
 COPY app/gateway/ app/gateway/
-COPY app/transport/ app/transport/
+COPY app/transport/__init__.py app/transport/__init__.py
+COPY app/transport/mock_ports.py app/transport/mock_ports.py
+COPY app/transport/workflows.py app/transport/workflows.py
+COPY app/transport/auth_client.py app/transport/auth_client.py
+COPY app/transport/rpc_codec.py app/transport/rpc_codec.py
+COPY app/transport/rpc_registry.py app/transport/rpc_registry.py
 COPY app/core/__init__.py app/core/__init__.py
 COPY app/core/errors.py app/core/errors.py
 COPY app/core/validation.py app/core/validation.py

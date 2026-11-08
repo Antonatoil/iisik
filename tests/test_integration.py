@@ -2,6 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from tests.demo_auth import demo_token
 
 STUDENT = "demo-student-token"
 TEACHER = "demo-teacher-token"
@@ -17,7 +18,7 @@ def client():
 
 
 def run(client, query, token=STUDENT, variables=None):
-    h = {"Authorization": f"Bearer {token}"} if token else {}
+    h = {"Authorization": f"Bearer {demo_token(token)}"} if token else {}
     response = client.post("/graphql/", json={"query": query, "variables": variables or {}}, headers=h)
     assert response.status_code == 200, response.text
     return response.json()

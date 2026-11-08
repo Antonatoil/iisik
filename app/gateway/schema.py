@@ -204,6 +204,13 @@ def booking_lesson(parent, info):
 
 
 # Lab 4: Mutation resolvers only authorize/delegate; no SQL in Gateway.
+@mutation.field("logout")
+def mutate_logout(_, info):
+    actor_of(info)
+    from app.transport.auth_client import logout
+    return logout(info.context['token'])
+
+
 @mutation.field("register")
 def mutate_register(_, info, input):
     return ports.RegisterUser(input)

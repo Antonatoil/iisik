@@ -1,0 +1,20 @@
+# Lab 5: сначала вызвать login с учётными данными из локальной .env.
+# Далее вставить возвращённый JWT в HTTP headers GraphQL Explorer:
+# {"Authorization": "Bearer <JWT_FROM_LOGIN>"}
+
+mutation Login($input: LoginInput!) {
+  login(input: $input) { token expiresAt user { id role name status } }
+}
+# Variables: {"input":{"email":"student@example.test","password":"<LAB5_DEMO_PASSWORD>"}}
+
+query MyProfile {
+  me { id name role status }
+  myBookings(page: {limit: 10, offset: 0}) { items { id status } }
+}
+
+mutation Logout {
+  logout
+}
+
+# После logout тот же JWT больше не работает,
+# даже если подпись и срок действия JWT ещё корректны.
