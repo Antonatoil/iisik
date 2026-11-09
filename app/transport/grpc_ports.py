@@ -15,6 +15,8 @@ from app.core.errors import fail
 from app.transport.rpc_codec import to_wire, from_wire
 from app.transport.rpc_registry import RPC_METHODS, SERVICE_NAMES
 from app.transport import workflows
+from app.resilience.grpc_policy import call_with_policy
+from app.resilience.telemetry import trace_id
 
 
 def _metadata(*, repo=False):
@@ -22,6 +24,7 @@ def _metadata(*, repo=False):
     if not key:
         fail('CONFIGURATION_ERROR', 'Missing RPC_SHARED_KEY')
     result = [('x-rpc-secret', key)]
+    result.append(('x-correlation-id', trace_id()))
     if repo:
         repo_key = os.getenv('AUTH_REPOSITORY_KEY', '')
         if not repo_key:
@@ -39,6 +42,8 @@ def channel_for(owner):
 def _call_with_errors(func, owner, method):
     try:
         return func()
+    except TimeoutError:
+        fail('SERVICE_TIMEOUT', f'{SERVICE_NAMES[owner]} gRPC total deadline exceeded')
     except grpc.RpcError as exc:
         status = exc.code()
         if status == grpc.StatusCode.DEADLINE_EXCEEDED:
@@ -59,7 +64,9 @@ def rpc(owner, method, *args, repo=False, **kwargs):
         args_json=json.dumps(to_wire(list(args)), ensure_ascii=False, separators=(',', ':')).encode('utf-8'),
         kwargs_json=json.dumps(to_wire(kwargs), ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
     stub = integration_pb2_grpc.InternalOperationsStub(channel_for(owner))
-    answer = _call_with_errors(lambda: getattr(stub, method)(request, metadata=_metadata(repo=repo), timeout=12), owner, method)
+    answer = _call_with_errors(lambda: call_with_policy(
+        lambda timeout: getattr(stub, method)(request, metadata=_metadata(repo=repo), timeout=timeout),
+        service=SERVICE_NAMES[owner], method=method), owner, method)
     if not answer.ok:
         fail(answer.error_code or 'BUSINESS_ERROR', answer.error_message or 'Business operation failed')
     return from_wire(json.loads(answer.result_json.decode('utf-8')))
@@ -68,8 +75,12 @@ def rpc(owner, method, *args, repo=False, **kwargs):
 def typed_offer(teacher_id, subject_id):
     stub = tutoring_pb2_grpc.CatalogStub(channel_for('t'))
     try:
-        response = stub.GetTeachingOffer(tutoring_pb2.GetTeachingOfferRequest(
-            teacher_id=teacher_id, subject_id=subject_id), metadata=_metadata(), timeout=8)
+        response = call_with_policy(
+            lambda timeout: stub.GetTeachingOffer(tutoring_pb2.GetTeachingOfferRequest(
+                teacher_id=teacher_id, subject_id=subject_id), metadata=_metadata(), timeout=timeout),
+            service='catalog', method='GetTeachingOffer')
+    except TimeoutError:
+        fail('SERVICE_TIMEOUT', 'Typed gRPC total deadline exceeded')
     except grpc.RpcError as exc:
         if exc.code() == grpc.StatusCode.NOT_FOUND:
             return None
@@ -81,8 +92,12 @@ def typed_offer(teacher_id, subject_id):
 def typed_rating(teacher_id):
     stub = tutoring_pb2_grpc.ReputationStub(channel_for('r'))
     try:
-        response = stub.GetRating(tutoring_pb2.GetRatingRequest(teacher_id=teacher_id),
-                                  metadata=_metadata(), timeout=8)
+        response = call_with_policy(
+            lambda timeout: stub.GetRating(tutoring_pb2.GetRatingRequest(teacher_id=teacher_id),
+                                            metadata=_metadata(), timeout=timeout),
+            service='reputation', method='GetRating')
+    except TimeoutError:
+        fail('SERVICE_TIMEOUT', 'Typed gRPC total deadline exceeded')
     except grpc.RpcError as exc:
         if exc.code() == grpc.StatusCode.NOT_FOUND:
             return None

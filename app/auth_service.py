@@ -23,6 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.transport.rpc_codec import from_wire, to_wire
+from app.resilience.telemetry import start_trace, end_trace, emit
 
 logger = logging.getLogger(__name__)
 ISSUER = 'tutoring-v27-auth'
@@ -39,8 +40,20 @@ if len(os.environ['JWT_SECRET']) < 48:
 redis_client = redis.Redis.from_url(os.environ['REDIS_URL'], decode_responses=True,
                                   socket_connect_timeout=2, socket_timeout=3,
                                   health_check_interval=30)
-app = FastAPI(title='Auth Service - Lab 5 Variant 27', version='5.0',
+app = FastAPI(title='Auth Service - Lab 7 Variant 27', version='7.0',
               docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.middleware('http')
+async def auth_correlation(request: Request, call_next):
+    trace, token = start_trace(request.headers.get('x-correlation-id'))
+    try:
+        response = await call_next(request)
+        response.headers['X-Correlation-ID'] = trace
+        emit('http_request',service='auth',path=request.url.path,status=response.status_code)
+        return response
+    finally:
+        end_trace(token)
 
 
 class Envelope(BaseModel):
@@ -228,7 +241,7 @@ def login(payload: Envelope, request: Request):
         from app.events.auth_events import emit_auth_event
         emit_auth_event(user)
     except Exception:
-        logger.warning('Could not publish optional UserAuthenticated event')
+        emit('kafka_publish',level='warning',service='auth',result='analytics_event_skipped')
     return {'result': result}
 
 

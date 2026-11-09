@@ -1,5 +1,7 @@
 """Public GraphQL Gateway; zero direct SQL or service implementation imports."""
 import httpx
+import time
+from app.resilience.telemetry import start_trace, end_trace, emit, elapsed_ms
 from confluent_kafka.admin import AdminClient
 from fastapi import FastAPI, HTTPException
 from ariadne.asgi import GraphQL
@@ -8,7 +10,25 @@ from app.transport.grpc_ports import ports
 from app.transport.rpc_registry import SERVICE_NAMES
 from app.transport.auth_client import validate as validate_jwt_session
 
-app = FastAPI(title='Tutoring Platform - Lab 6 / Variant 27', version='6.0')
+app = FastAPI(title='Tutoring Platform - Lab 7 / Variant 27', version='7.0')
+
+
+@app.middleware('http')
+async def correlation_middleware(request, call_next):
+    trace, token = start_trace(request.headers.get('x-correlation-id'))
+    started = time.monotonic()
+    try:
+        response = await call_next(request)
+        response.headers['X-Correlation-ID'] = trace
+        emit('http_request',service='gateway',path=request.url.path,
+             status=response.status_code,elapsed_ms=elapsed_ms(started))
+        return response
+    except Exception:
+        emit('http_request',level='error',service='gateway',path=request.url.path,
+             result='exception',elapsed_ms=elapsed_ms(started))
+        raise
+    finally:
+        end_trace(token)
 
 
 async def context_value(request, data=None):
@@ -20,7 +40,7 @@ async def context_value(request, data=None):
 
 @app.get('/health')
 def health():
-    return {'status': 'ok', 'laboratory': 6, 'variant': 27}
+    return {'status': 'ok', 'laboratory': 7, 'variant': 27}
 
 
 @app.get('/ready')

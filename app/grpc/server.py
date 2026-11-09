@@ -8,6 +8,7 @@ import hmac
 import json
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timezone
 from importlib import import_module
@@ -18,6 +19,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from contracts import integration_pb2, integration_pb2_grpc, tutoring_pb2, tutoring_pb2_grpc
 from app.transport.rpc_codec import from_wire, to_wire
 from app.transport.rpc_registry import RPC_METHODS, SERVICE_NAMES
+from app.resilience.telemetry import start_trace, end_trace, emit, elapsed_ms
 
 log = logging.getLogger(__name__)
 
@@ -61,33 +63,56 @@ class Operations(integration_pb2_grpc.InternalOperationsServicer):
         return lambda request, context: self._invoke_named(method, request, context)
 
     def _invoke_named(self, method, request, context):
-        check_request(context, credentials=method == 'ReadCredentialForAuth')
-        handler = self.handlers.get(method)
-        if handler is None:
-            context.abort(grpc.StatusCode.NOT_FOUND, 'Method not provided by this service')
-        if len(request.args_json) > 1024 * 1024 or len(request.kwargs_json) > 1024 * 1024:
-            context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, 'RPC payload too large')
+        meta = dict(context.invocation_metadata())
+        cid, token = start_trace(meta.get('x-correlation-id'))
+        started = time.monotonic()
         try:
-            args = from_wire(json.loads(request.args_json.decode('utf-8')))
-            kwargs = from_wire(json.loads(request.kwargs_json.decode('utf-8')))
-            if not isinstance(args, list) or not isinstance(kwargs, dict):
-                raise ValueError('Invalid request structure')
-        except (UnicodeDecodeError, ValueError, TypeError, KeyError):
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, 'Invalid gRPC request payload')
-        try:
-            result = handler(*args, **kwargs)
-            return integration_pb2.InvokeReply(ok=True, result_json=json.dumps(to_wire(result),
-                    ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
-        except GraphQLError as error:
-            return integration_pb2.InvokeReply(ok=False,
-                error_code=(error.extensions or {}).get('code', 'BUSINESS_ERROR'),
-                error_message=error.message)
-        except (ValueError, KeyError, TypeError):
-            return integration_pb2.InvokeReply(ok=False, error_code='BAD_USER_INPUT',
-                                               error_message='Invalid command data')
-        except Exception:
-            log.exception('gRPC error: %s/%s', self.owner, method)
-            context.abort(grpc.StatusCode.INTERNAL, 'Internal service error')
+            check_request(context, credentials=method == 'ReadCredentialForAuth')
+            handler = self.handlers.get(method)
+            if handler is None:
+                context.abort(grpc.StatusCode.NOT_FOUND, 'Method not provided by this service')
+            if len(request.args_json) > 1024 * 1024 or len(request.kwargs_json) > 1024 * 1024:
+                context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, 'RPC payload too large')
+            try:
+                args = from_wire(json.loads(request.args_json.decode('utf-8')))
+                kwargs = from_wire(json.loads(request.kwargs_json.decode('utf-8')))
+                if not isinstance(args, list) or not isinstance(kwargs, dict):
+                    raise ValueError('Invalid request structure')
+            except (UnicodeDecodeError, ValueError, TypeError, KeyError):
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, 'Invalid gRPC request payload')
+            try:
+                if self.owner == 't':
+                    from app.resilience.catalog_cache import read_through
+                    result = read_through(method,args,kwargs,lambda:handler(*args, **kwargs))
+                else:
+                    result = handler(*args, **kwargs)
+                # Invalidate after a successful local DB transaction.
+                if self.owner == 't' and method in ('ManageSubjectLocal','UpdateTeacherProfileLocal',
+                                                    'UpdateRatingProjection','UpdatePopularity'):
+                    from app.resilience.catalog_cache import invalidate
+                    invalidate(method)
+                emit('grpc_server',service=SERVICE_NAMES[self.owner],method=method,
+                     result='ok',elapsed_ms=elapsed_ms(started))
+                return integration_pb2.InvokeReply(ok=True, result_json=json.dumps(to_wire(result),
+                        ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
+            except GraphQLError as error:
+                code=(error.extensions or {}).get('code','BUSINESS_ERROR')
+                emit('grpc_server',level='warning',service=SERVICE_NAMES[self.owner],
+                     method=method,result='business_error',error_code=code,
+                     elapsed_ms=elapsed_ms(started))
+                return integration_pb2.InvokeReply(ok=False,error_code=code,error_message=error.message)
+            except (ValueError, KeyError, TypeError):
+                emit('grpc_server',level='warning',service=SERVICE_NAMES[self.owner],
+                     method=method,result='invalid_input',elapsed_ms=elapsed_ms(started))
+                return integration_pb2.InvokeReply(ok=False,error_code='BAD_USER_INPUT',
+                                                   error_message='Invalid command data')
+            except Exception:
+                log.exception('gRPC error: %s/%s correlation=%s', self.owner, method, cid)
+                emit('grpc_server',level='error',service=SERVICE_NAMES[self.owner],method=method,
+                     result='error',elapsed_ms=elapsed_ms(started))
+                context.abort(grpc.StatusCode.INTERNAL, 'Internal service error')
+        finally:
+            end_trace(token)
 
 
 # grpc_tools generates no-op UNIMPLEMENTED methods on its base servicer.
@@ -105,40 +130,48 @@ for _method in RPC_METHODS:
 
 class CatalogTyped(tutoring_pb2_grpc.CatalogServicer):
     def GetTeachingOffer(self, request, context):
-        check_request(context)
-        from app.services.catalog_write import teaching_offer
+        _, trace_token = start_trace(dict(context.invocation_metadata()).get('x-correlation-id'))
         try:
-            offer = teaching_offer(request.teacher_id, request.subject_id)
-        except (ValueError, GraphQLError):
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, 'Invalid teacher or subject')
-        if not offer:
-            context.abort(grpc.StatusCode.NOT_FOUND, 'No active teaching offer')
-        return tutoring_pb2.TeachingOffer(
-            teacher_id=offer['teacher_id'], teacher_user_id=offer['teacher_id'],
-            subject_id=offer['subject_id'],
-            price=tutoring_pb2.Money(amount=str(offer['price']), currency=offer['currency']))
-
+            check_request(context)
+            emit('grpc_server',service='catalog',method='GetTeachingOffer',result='received')
+            from app.services.catalog_write import teaching_offer
+            try:
+                offer = teaching_offer(request.teacher_id, request.subject_id)
+            except (ValueError, GraphQLError):
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, 'Invalid teacher or subject')
+            if not offer:
+                context.abort(grpc.StatusCode.NOT_FOUND, 'No active teaching offer')
+            return tutoring_pb2.TeachingOffer(
+                teacher_id=offer['teacher_id'], teacher_user_id=offer['teacher_id'],
+                subject_id=offer['subject_id'],
+                price=tutoring_pb2.Money(amount=str(offer['price']), currency=offer['currency']))
+        finally:
+            end_trace(trace_token)
 
 class ReputationTyped(tutoring_pb2_grpc.ReputationServicer):
     def GetRating(self, request, context):
-        check_request(context)
-        from app.services.reputation import get_rating
+        _, trace_token = start_trace(dict(context.invocation_metadata()).get('x-correlation-id'))
         try:
-            rating = get_rating(request.teacher_id)
-        except (ValueError, GraphQLError):
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, 'Invalid teacher')
-        if rating is None:
-            context.abort(grpc.StatusCode.NOT_FOUND, 'No rating')
-        result = tutoring_pb2.Rating(
-            teacher_id=rating['teacherId'], average=str(rating['average']),
-            review_count=rating['reviewCount'], version=rating['version'])
-        if rating['updatedAt']:
-            at = rating['updatedAt']
-            if at.tzinfo is None:
-                at = at.replace(tzinfo=timezone.utc)
-            result.updated_at.FromDatetime(at)
-        return tutoring_pb2.GetRatingResponse(result=result)
-
+            check_request(context)
+            emit('grpc_server',service='reputation',method='GetRating',result='received')
+            from app.services.reputation import get_rating
+            try:
+                rating = get_rating(request.teacher_id)
+            except (ValueError, GraphQLError):
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, 'Invalid teacher')
+            if rating is None:
+                context.abort(grpc.StatusCode.NOT_FOUND, 'No rating')
+            result = tutoring_pb2.Rating(
+                teacher_id=rating['teacherId'], average=str(rating['average']),
+                review_count=rating['reviewCount'], version=rating['version'])
+            if rating['updatedAt']:
+                at = rating['updatedAt']
+                if at.tzinfo is None:
+                    at = at.replace(tzinfo=timezone.utc)
+                result.updated_at.FromDatetime(at)
+            return tutoring_pb2.GetRatingResponse(result=result)
+        finally:
+            end_trace(trace_token)
 
 def start(owner):
     executor = ThreadPoolExecutor(max_workers=16, thread_name_prefix=owner+'-grpc')

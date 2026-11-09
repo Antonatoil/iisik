@@ -4,6 +4,7 @@ No password verification, JWT secret, session database or Redis client lives in 
 """
 import os
 import httpx
+from app.resilience.telemetry import trace_id
 from app.core.errors import fail
 from app.transport.rpc_codec import from_wire
 
@@ -17,7 +18,7 @@ def _call(name, payload, *, allow_denied=False):
     try:
         with httpx.Client(timeout=httpx.Timeout(10.0, connect=2.0), trust_env=False) as client:
             response = client.post(URL + name, json=payload,
-                                   headers={'X-Auth-Internal-Key': secret})
+                                   headers={'X-Auth-Internal-Key': secret,'X-Correlation-ID': trace_id()})
     except httpx.TimeoutException:
         fail('SERVICE_TIMEOUT', 'Authentication service timed out')
     except httpx.RequestError:

@@ -59,7 +59,7 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # Fix named-volume ownership before Kafka runs as non-root UID 1000.
+  # Initialize Kafka named volume ownership before starting as UID 1000.
   kafka-storage-init:
     image: postgres:16-alpine
     user: "0:0"
@@ -135,6 +135,7 @@ services:
     environment:
       <<: *internal-env
       SERVICE_OWNER: t
+      CATALOG_CACHE_URL: redis://:${REDIS_PASSWORD:?Existing Lab 5 key required}@redis:6379/1
   learning:
     <<: *internal-service
     environment:
@@ -226,6 +227,7 @@ services:
       AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?Existing Lab 5 key required}
       REDIS_URL: redis://:${REDIS_PASSWORD:?Existing Lab 5 key required}@redis:6379/0
       KAFKA_BOOTSTRAP: kafka:9092
+      CATALOG_CACHE_URL: redis://:${REDIS_PASSWORD:?Existing Lab 5 key required}@redis:6379/1
     depends_on:
       gateway: {condition: service_healthy}
     restart: "no"

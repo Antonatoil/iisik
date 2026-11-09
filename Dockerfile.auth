@@ -10,6 +10,7 @@ COPY contracts/events.schema.json contracts/events.schema.json
 RUN python -m grpc_tools.protoc -I. -I/usr/local/lib/python3.11/site-packages/grpc_tools/_proto --python_out=. --grpc_python_out=. \
     contracts/tutoring.proto contracts/integration.proto
 COPY app/__init__.py app/__init__.py
+COPY app/resilience/ app/resilience/
 COPY app/auth_service.py app/auth_service.py
 COPY app/events/__init__.py app/events/__init__.py
 COPY app/events/domain.py app/events/domain.py

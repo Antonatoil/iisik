@@ -4,6 +4,8 @@ Local commits create transactional outbox events; Kafka consumers update
 read models and notifications asynchronously, not via Gateway mock calls.
 """
 from app.core.errors import require_role, fail
+from graphql import GraphQLError
+from app.resilience.telemetry import emit
 
 
 def business_condition(test, code, message):
@@ -64,7 +66,17 @@ def register_payment(actor,arg):
         # Fast synchronous availability for subsequent StartLesson commands;
         # Kafka PaymentCompleted consumer independently retries the same
         # idempotent update and populates analytics/notifications asynchronously.
-        _ports().ApplyPaymentToBooking(arg['bookingId'],arg['operationId'])
+        try:
+            _ports().ApplyPaymentToBooking(arg['bookingId'],arg['operationId'])
+        except GraphQLError as exc:
+            code=(exc.extensions or {}).get('code')
+            if code not in ('SERVICE_TIMEOUT','SERVICE_UNAVAILABLE'):
+                raise
+            # Payment has already committed with PaymentCompleted in DB-P outbox.
+            # Do not report it as failed or retry the mutation blindly.
+            # Learning's Kafka consumer will reconcile the booking when it recovers.
+            emit('payment_sync_deferred',level='warning',service='payments',
+                 operation_id=arg['operationId'],booking_id=arg['bookingId'],error_code=code)
     return result
 
 

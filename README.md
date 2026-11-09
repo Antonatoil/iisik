@@ -1,3 +1,19 @@
+# ЛР7 — устойчивость и оптимизация распределённой системы
+
+Актуальная версия: ЛР7 поверх ЛР6 (`4572eab`). Добавлены **bounded retry/timeout** для
+read-only gRPC, обработка Kafka с DLQ после ограниченного числа попыток,
+**Redis read-through кеш каталога** (отдельный DB 1, TTL 45 с, инвалидация),
+структурированные логи с correlation ID и восстановление платежного сценария
+после частичного отказа Learning через Kafka.
+
+Запуск: `docker compose up -d --build`.
+Проверка: `docker compose build tests; docker compose run --rm tests`.
+Демонстрация: `scripts/demo_lab7.ps1`.
+Подробности и ограничения: `docs/LAB7_RESILIENCE.md`.
+Данные и история ЛР3–ЛР6 сохраняются; не удаляйте Docker volumes.
+
+---
+
 # ЛР5 — безопасность GraphQL API (текущая версия)
 
 Один **GraphQL Gateway**, семь независимых сервисов ЛР4, отдельный

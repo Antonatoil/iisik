@@ -15,6 +15,7 @@ from sqlalchemy import text
 from app.core.db import engine
 from app.events.domain import _VALIDATOR, stage, build, iso
 from app.events.publisher import producer
+from app.resilience.telemetry import start_trace, end_trace, emit
 
 LOG = logging.getLogger(__name__)
 CONSUMERS = {
@@ -170,7 +171,30 @@ def process(owner, evt):
         conn.execute(text("""INSERT INTO event_inbox(event_id,event_type,processed_at)
              VALUES(CAST(:id AS uuid),:typ,now()) ON CONFLICT DO NOTHING"""),
              {'id':evt['event_id'],'typ':typ})
+    if owner == 't' and typ in ('RatingUpdated','PopularityUpdated'):
+        from app.resilience.catalog_cache import invalidate
+        invalidate('Kafka:' + typ)
     return True
+
+
+MAX_ATTEMPTS = 5
+
+
+def dead_letter(msg, owner, error, attempts, reason):
+    """Durably acknowledge the DLQ record BEFORE committing original offset."""
+    payload = {'error': str(error)[:500], 'reason': reason, 'owner': owner,
+               'attempts': attempts, 'source_topic': msg.topic(),
+               'source_partition': msg.partition(), 'source_offset': msg.offset(),
+               'payload': msg.value().decode('utf-8', 'replace')}
+    p = producer()
+    acks=[]
+    p.produce('tutor.events.dlq.v1',json.dumps(payload,ensure_ascii=False).encode(),
+              key=(str(owner) + ':' + str(msg.offset())).encode(),
+              on_delivery=lambda err,record:acks.append(err))
+    if p.flush(12) or acks != [None]:
+        raise RuntimeError('Kafka DLQ delivery not acknowledged')
+    emit('kafka_dead_letter',level='error',service=owner,reason=reason,
+         attempts=attempts,topic=msg.topic(),partition=msg.partition(),offset=msg.offset())
 
 
 def consumer_loop(owner, stop:Event):
@@ -186,40 +210,76 @@ def consumer_loop(owner, stop:Event):
                 msg=consumer.poll(1.0)
                 if msg is None:continue
                 if msg.error():
-                    LOG.warning('Kafka error %s: %s',owner,msg.error());continue
+                    emit('kafka_poll_error',level='warning',service=owner,
+                         error_code=str(msg.error())[:150])
+                    stop.wait(1)
+                    continue
                 pos=(msg.topic(),msg.partition(),msg.offset())
                 try:
                     evt=json.loads(msg.value())
+                    if not isinstance(evt,dict):
+                        raise ValueError('Kafka envelope must be an object')
                     errors=list(_VALIDATOR.iter_errors(evt))
                     if errors:
                         raise ValueError(errors[0].message)
-                    process(owner,evt)
-                    consumer.commit(message=msg,asynchronous=False)
-                    retries.pop(pos,None)
-                except (json.JSONDecodeError,ValueError,UnicodeDecodeError) as exc:
-                    # Invalid contract cannot be fixed by retrying. Keep DLQ evidence.
-                    LOG.error('Rejected invalid event: %s',exc)
+                except (json.JSONDecodeError,ValueError,UnicodeDecodeError,TypeError) as exc:
+                    # Invalid contract: make durable DLQ record, THEN commit offset.
                     try:
-                        payload={'error':str(exc),'source_topic':msg.topic(),
-                                 'source_partition':msg.partition(),'source_offset':msg.offset(),
-                                 'payload':msg.value().decode('utf-8','replace')}
-                        p=producer()
-                        ack=[]
-                        p.produce('tutor.events.dlq.v1',json.dumps(payload).encode(),
-                                  on_delivery=lambda err,record:ack.append(err))
-                        assert p.flush(10)==0 and ack==[None]
+                        dead_letter(msg,owner,exc,1,'invalid_schema')
                         consumer.commit(message=msg,asynchronous=False)
-                    except Exception:
-                        LOG.exception('DLQ unavailable; will retry original Kafka record')
-                        consumer.seek(TopicPartition(msg.topic(),msg.partition(),msg.offset()))
+                        retries.pop(pos,None)
+                    except Exception as dlq_exc:
+                        emit('kafka_dlq_unavailable',level='error',service=owner,
+                             topic=msg.topic(),offset=msg.offset(),
+                             error_type=type(dlq_exc).__name__)
+                        consumer.seek(TopicPartition(*pos))
                         stop.wait(2)
-                except Exception:
-                    retries[pos]=retries.get(pos,0)+1
-                    LOG.exception('Event processing failed for %s, attempt %s',owner,retries[pos])
-                    consumer.seek(TopicPartition(msg.topic(),msg.partition(),msg.offset()))
-                    stop.wait(min(5,retries[pos]))
-            except Exception:
-                LOG.exception('Kafka consumer %s failure',owner)
+                    continue
+                _, trace_token = start_trace(evt['correlation_id'])
+                try:
+                    try:
+                        changed=process(owner,evt)
+                    except Exception as exc:
+                        # DB failures and consumer business errors count against a
+                        # bounded retry budget. Offset does not move on failure.
+                        attempts=retries.get(pos,0)+1
+                        retries[pos]=attempts
+                        emit('kafka_process_failed',level='warning',service=owner,
+                             event_type=evt['event_type'],event_id=evt['event_id'],
+                             attempt=attempts,offset=msg.offset(),
+                             error_type=type(exc).__name__)
+                        if attempts >= MAX_ATTEMPTS:
+                            try:
+                                dead_letter(msg,owner,exc,attempts,'processing_failed')
+                                consumer.commit(message=msg,asynchronous=False)
+                                retries.pop(pos,None)
+                                continue
+                            except Exception as dlq_exc:
+                                emit('kafka_dlq_unavailable',level='error',service=owner,
+                                     topic=msg.topic(),offset=msg.offset(),
+                                     error_type=type(dlq_exc).__name__)
+                        consumer.seek(TopicPartition(*pos))
+                        stop.wait(min(.4 * (2 ** (min(attempts,5)-1)),6))
+                        continue
+                    try:
+                        # DB change + inbox marker committed BEFORE Kafka offset.
+                        consumer.commit(message=msg,asynchronous=False)
+                    except Exception as exc:
+                        # This is NOT a poison event: inbox protects replay.
+                        emit('kafka_commit_failed',level='warning',service=owner,
+                             offset=msg.offset(),error_type=type(exc).__name__)
+                        consumer.seek(TopicPartition(*pos))
+                        stop.wait(2)
+                        continue
+                    retries.pop(pos,None)
+                    emit('kafka_consumed',service=owner,event_type=evt['event_type'],
+                         event_id=evt['event_id'],topic=msg.topic(),offset=msg.offset(),
+                         result='applied' if changed else 'ignored_or_duplicate')
+                finally:
+                    end_trace(trace_token)
+            except Exception as exc:
+                emit('kafka_consumer_error',level='error',service=owner,
+                     error_type=type(exc).__name__)
                 stop.wait(2)
     finally:
         consumer.close()

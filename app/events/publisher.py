@@ -11,6 +11,7 @@ from confluent_kafka import Producer, KafkaException
 from sqlalchemy import text
 from app.core.db import engine
 from app.events.domain import build
+from app.resilience.telemetry import start_trace, end_trace, emit
 
 LOG = logging.getLogger(__name__)
 
@@ -29,7 +30,11 @@ def send(p, event, topic='tutor.events.v1'):
               key=event['aggregate_id'].encode(), on_delivery=ack)
     remaining=p.flush(12)
     if remaining or delivered != [None]:
+        emit('kafka_publish',level='warning',event_type=event['event_type'],
+             event_id=event['event_id'],topic=topic,result='not_acknowledged')
         raise RuntimeError('Kafka did not acknowledge event')
+    emit('kafka_publish',event_type=event['event_type'],event_id=event['event_id'],
+         topic=topic,result='acknowledged')
 
 
 def emit_auth_event(user):
@@ -52,11 +57,16 @@ def outbox_loop(owner, stop:Event):
                 if row:
                     event=row['envelope']
                     if isinstance(event,str):event=json.loads(event)
-                    send(p,event,topic=row['topic'])
+                    _, trace_token = start_trace(event['correlation_id'])
+                    try:
+                        send(p,event,topic=row['topic'])
+                    finally:
+                        end_trace(trace_token)
                     conn.execute(text('UPDATE event_outbox SET published_at=now() WHERE event_id=CAST(:id AS uuid)'),
                                  {'id':row['event_id']})
             if not row:
                 stop.wait(.3)
-        except Exception:
-            LOG.exception('Outbox relay failed for %s; retrying without losing the event',owner)
+        except Exception as exc:
+            emit('kafka_outbox_retry',level='warning',service=owner,
+                 error_type=type(exc).__name__)
             stop.wait(2)
